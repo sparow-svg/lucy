@@ -1,5 +1,4 @@
 import { useState, useRef, useEffect } from "react";
-import { TasksPanel } from "./TasksPanel";
 import type { Conversation, Memory } from "@/App";
 
 interface ConversationSidebarProps {
@@ -62,10 +61,7 @@ function ConvItem({
     <div
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
-      style={{
-        padding: "0 8px",
-        margin: "1px 0",
-      }}
+      style={{ padding: "0 8px", margin: "1px 0" }}
     >
       <div
         style={{
@@ -122,13 +118,7 @@ function ConvItem({
             </p>
           )}
           {!editing && (
-            <p style={{
-              margin: 0,
-              fontSize: 11,
-              color: "#999",
-              fontFamily: "'Inter', system-ui, sans-serif",
-              marginTop: 1,
-            }}>
+            <p style={{ margin: 0, fontSize: 11, color: "#999", fontFamily: "'Inter', system-ui, sans-serif", marginTop: 1 }}>
               {timeAgo(conv.createdAt)}
             </p>
           )}
@@ -219,10 +209,7 @@ function MemoryPanel({
           Lucy remembers…
         </span>
         <svg
-          width="12"
-          height="12"
-          viewBox="0 0 12 12"
-          fill="none"
+          width="12" height="12" viewBox="0 0 12 12" fill="none"
           style={{ color: "#aaa", transform: open ? "rotate(180deg)" : "rotate(0deg)", transition: "transform 0.2s" }}
         >
           <path d="M2 4L6 8L10 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
@@ -238,23 +225,11 @@ function MemoryPanel({
                 "My favorite coffee is black.",
                 "My project deadline is March 28.",
               ].map((example, i) => (
-                <div
-                  key={i}
-                  style={{
-                    display: "flex",
-                    alignItems: "flex-start",
-                    gap: 6,
-                    padding: "5px 8px",
-                    borderRadius: 6,
-                  }}
-                >
+                <div key={i} style={{ display: "flex", alignItems: "flex-start", gap: 6, padding: "5px 8px", borderRadius: 6 }}>
                   <span style={{
-                    fontSize: 11,
-                    color: "#ccc",
+                    fontSize: 11, color: "#ccc",
                     fontFamily: "'Inter', system-ui, sans-serif",
-                    flex: 1,
-                    lineHeight: 1.5,
-                    fontStyle: "italic",
+                    flex: 1, lineHeight: 1.5, fontStyle: "italic",
                   }}>
                     {example}
                   </span>
@@ -272,11 +247,8 @@ function MemoryPanel({
                   onMouseEnter={() => setHoveredId(m.id)}
                   onMouseLeave={() => setHoveredId(null)}
                   style={{
-                    display: "flex",
-                    alignItems: "flex-start",
-                    gap: 6,
-                    padding: "5px 8px",
-                    borderRadius: 6,
+                    display: "flex", alignItems: "flex-start", gap: 6,
+                    padding: "5px 8px", borderRadius: 6,
                     backgroundColor: hoveredId === m.id ? "rgba(0,0,0,0.04)" : "transparent",
                   }}
                 >
@@ -303,22 +275,18 @@ function MemoryPanel({
               ))}
             </div>
           )}
-          <div style={{ display: "flex", gap: 6, padding: "0 0 0 0" }}>
+          <div style={{ display: "flex", gap: 6 }}>
             <input
               value={newText}
               onChange={e => setNewText(e.target.value)}
               onKeyDown={e => { if (e.key === "Enter") submit(); }}
               placeholder="Add a memory…"
               style={{
-                flex: 1,
-                fontSize: 12,
+                flex: 1, fontSize: 12,
                 fontFamily: "'Inter', system-ui, sans-serif",
-                color: "#333",
-                border: "1.5px solid #e8e8e8",
-                borderRadius: 7,
-                padding: "7px 10px",
-                outline: "none",
-                backgroundColor: "#fafafa",
+                color: "#333", border: "1.5px solid #e8e8e8",
+                borderRadius: 7, padding: "7px 10px",
+                outline: "none", backgroundColor: "#fafafa",
               }}
               onFocus={e => (e.currentTarget.style.borderColor = "#0A84FF")}
               onBlur={e => (e.currentTarget.style.borderColor = "#e8e8e8")}
@@ -327,15 +295,11 @@ function MemoryPanel({
               onClick={submit}
               disabled={!newText.trim()}
               style={{
-                flexShrink: 0,
-                padding: "0 12px",
-                fontSize: 12,
-                fontWeight: 600,
+                flexShrink: 0, padding: "0 12px", fontSize: 12, fontWeight: 600,
                 fontFamily: "'Inter', system-ui, sans-serif",
                 backgroundColor: newText.trim() ? "#0A84FF" : "#e0e0e0",
                 color: newText.trim() ? "#fff" : "#aaa",
-                border: "none",
-                borderRadius: 7,
+                border: "none", borderRadius: 7,
                 cursor: newText.trim() ? "pointer" : "not-allowed",
                 transition: "background-color 0.15s",
               }}
@@ -361,8 +325,6 @@ export function ConversationSidebar({
   onDeleteMemory,
   onClose,
 }: ConversationSidebarProps) {
-  const [tasksOpen, setTasksOpen] = useState(false);
-
   return (
     <div
       style={{
@@ -385,7 +347,7 @@ export function ConversationSidebar({
         overflow: "hidden",
       }}
     >
-      {/* Header — close button only, no logo, no name */}
+      {/* Header */}
       <div
         style={{
           display: "flex",
@@ -399,18 +361,11 @@ export function ConversationSidebar({
         <button
           onClick={onNew}
           style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 6,
-            fontSize: 12,
-            fontWeight: 500,
+            display: "flex", alignItems: "center", gap: 6,
+            fontSize: 12, fontWeight: 500,
             fontFamily: "'Inter', system-ui, sans-serif",
-            color: "#444",
-            background: "none",
-            border: "none",
-            cursor: "pointer",
-            padding: "3px 6px",
-            borderRadius: 6,
+            color: "#444", background: "none", border: "none",
+            cursor: "pointer", padding: "3px 6px", borderRadius: 6,
             transition: "background 0.12s",
           }}
           onMouseEnter={e => (e.currentTarget.style.background = "rgba(0,0,0,0.06)")}
@@ -426,15 +381,9 @@ export function ConversationSidebar({
           onClick={onClose}
           title="Collapse sidebar"
           style={{
-            background: "none",
-            border: "none",
-            cursor: "pointer",
-            padding: 4,
-            display: "flex",
-            alignItems: "center",
-            color: "#bbb",
-            borderRadius: 5,
-            transition: "color 0.12s",
+            background: "none", border: "none", cursor: "pointer",
+            padding: 4, display: "flex", alignItems: "center",
+            color: "#bbb", borderRadius: 5, transition: "color 0.12s",
           }}
           onMouseEnter={e => ((e.currentTarget as HTMLButtonElement).style.color = "#555")}
           onMouseLeave={e => ((e.currentTarget as HTMLButtonElement).style.color = "#bbb")}
@@ -451,12 +400,8 @@ export function ConversationSidebar({
         <div style={{ padding: "8px 0 4px" }}>
           {conversations.length === 0 ? (
             <p style={{
-              padding: "6px 16px",
-              fontSize: 12,
-              color: "#bbb",
-              fontFamily: "'Inter', system-ui, sans-serif",
-              margin: 0,
-              lineHeight: 1.5,
+              padding: "6px 16px", fontSize: 12, color: "#bbb",
+              fontFamily: "'Inter', system-ui, sans-serif", margin: 0, lineHeight: 1.5,
             }}>
               No conversations yet.
             </p>
@@ -474,40 +419,7 @@ export function ConversationSidebar({
           )}
         </div>
 
-        {/* Tasks section */}
-        <div style={{ borderTop: "1px solid rgba(0,0,0,0.08)", marginTop: 2 }}>
-          <button
-            onClick={() => setTasksOpen(o => !o)}
-            style={{
-              width: "100%",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              padding: "10px 16px 8px",
-              background: "none",
-              border: "none",
-              cursor: "pointer",
-              fontFamily: "'Inter', system-ui, sans-serif",
-            }}
-          >
-            <span style={{ fontSize: 11, fontWeight: 600, color: "#888", letterSpacing: "0.06em", textTransform: "uppercase" }}>
-              Tasks
-            </span>
-            <svg
-              width="12" height="12" viewBox="0 0 12 12" fill="none"
-              style={{ color: "#aaa", transform: tasksOpen ? "rotate(180deg)" : "rotate(0deg)", transition: "transform 0.2s" }}
-            >
-              <path d="M2 4L6 8L10 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-            </svg>
-          </button>
-          {tasksOpen && (
-            <div style={{ padding: "0 8px 12px" }}>
-              <TasksPanel compact />
-            </div>
-          )}
-        </div>
-
-        {/* Memory panel */}
+        {/* Memory panel — no tasks section */}
         <MemoryPanel
           memories={memories}
           onAdd={onAddMemory}

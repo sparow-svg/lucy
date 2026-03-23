@@ -124,7 +124,7 @@ export default function Landing({ onStart, onSignIn }: LandingProps) {
             textShadow: "0 1px 6px rgba(0,0,0,0.4)",
             margin: 0, maxWidth: 480, lineHeight: 1.7,
           }}>
-            The world's first AI companion that listens, remembers, and talks with you — helping you think, plan, and stay connected, naturally.
+            The world's first AI companion that listens, remembers, and talks with you.
           </p>
         </div>
 

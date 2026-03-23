@@ -15,39 +15,69 @@ const pill: React.CSSProperties = {
 };
 
 function SocialButton({ icon, label }: { icon: React.ReactNode; label: string }) {
+  const [clicked, setClicked] = useState(false);
+
+  const handleClick = () => {
+    setClicked(true);
+    setTimeout(() => setClicked(false), 2500);
+  };
+
   return (
-    <button
-      type="button"
-      style={{
-        width: "100%",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        gap: 10,
-        padding: "11px 0",
-        fontSize: 14,
-        fontWeight: 500,
-        fontFamily: "'Inter', system-ui, sans-serif",
-        color: "#222",
-        backgroundColor: "#fff",
-        border: "1.5px solid #e0e0e0",
-        ...pill,
-        cursor: "pointer",
-        transition: "border-color 0.15s, background-color 0.15s",
-        letterSpacing: "-0.01em",
-      }}
-      onMouseEnter={e => {
-        (e.currentTarget as HTMLButtonElement).style.backgroundColor = "#f5f5f5";
-        (e.currentTarget as HTMLButtonElement).style.borderColor = "#bbb";
-      }}
-      onMouseLeave={e => {
-        (e.currentTarget as HTMLButtonElement).style.backgroundColor = "#fff";
-        (e.currentTarget as HTMLButtonElement).style.borderColor = "#e0e0e0";
-      }}
-    >
-      {icon}
-      {label}
-    </button>
+    <div style={{ position: "relative" }}>
+      <button
+        type="button"
+        onClick={handleClick}
+        style={{
+          width: "100%",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          gap: 10,
+          padding: "11px 0",
+          fontSize: 14,
+          fontWeight: 500,
+          fontFamily: "'Inter', system-ui, sans-serif",
+          color: "#222",
+          backgroundColor: "#fff",
+          border: "1.5px solid #e0e0e0",
+          ...pill,
+          cursor: "pointer",
+          transition: "border-color 0.15s, background-color 0.15s",
+          letterSpacing: "-0.01em",
+        }}
+        onMouseEnter={e => {
+          (e.currentTarget as HTMLButtonElement).style.backgroundColor = "#f5f5f5";
+          (e.currentTarget as HTMLButtonElement).style.borderColor = "#bbb";
+        }}
+        onMouseLeave={e => {
+          (e.currentTarget as HTMLButtonElement).style.backgroundColor = "#fff";
+          (e.currentTarget as HTMLButtonElement).style.borderColor = "#e0e0e0";
+        }}
+      >
+        {icon}
+        {label}
+      </button>
+      {clicked && (
+        <div style={{
+          position: "absolute",
+          top: "calc(100% + 6px)",
+          left: "50%",
+          transform: "translateX(-50%)",
+          backgroundColor: "#111",
+          color: "#fff",
+          fontSize: 12,
+          fontFamily: "'Inter', system-ui, sans-serif",
+          padding: "6px 14px",
+          borderRadius: 8,
+          whiteSpace: "nowrap",
+          pointerEvents: "none",
+          zIndex: 10,
+          boxShadow: "0 2px 12px rgba(0,0,0,0.2)",
+        }}>
+          Coming soon
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -210,7 +240,7 @@ export function AuthModal({ initialTab = "signin", onClose, onSuccess }: AuthMod
           position: "relative",
         }}
       >
-        {/* Logo — mobile + right-panel position matching homepage header */}
+        {/* Back button only — no logo on the right white panel */}
         <div style={{
           position: "absolute",
           top: 0,
@@ -219,19 +249,9 @@ export function AuthModal({ initialTab = "signin", onClose, onSuccess }: AuthMod
           height: 64,
           display: "flex",
           alignItems: "center",
-          justifyContent: "space-between",
+          justifyContent: "flex-end",
           padding: "0 40px",
         }}>
-          <span style={{
-            fontSize: 18,
-            fontWeight: 600,
-            letterSpacing: "-0.03em",
-            color: "#111",
-            userSelect: "none",
-            fontFamily: "'Inter', system-ui, sans-serif",
-          }}>
-            Lucy
-          </span>
           <button
             onClick={onClose}
             style={{
