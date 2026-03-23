@@ -48,9 +48,9 @@ export default function Home() {
   }, [state]);
 
   const statusLabel =
-    isPaused            ? 'say "Lucy" to continue' :
-    state === 'dormant' ? 'say "Lucy" to start' :
-    state === 'listening' ? 'listening…' :
+    isPaused            ? 'Say "Lucy" to continue' :
+    state === 'dormant' ? 'Say "Lucy" to start' :
+    state === 'listening' ? 'Listening…' :
     state === 'thinking'  ? THINKING_FILLERS[fillerIdx] :
     null;
 
@@ -153,7 +153,6 @@ export default function Home() {
                 letterSpacing: '0.07em',
                 fontFamily: "'Inter', system-ui, sans-serif",
                 textShadow: '0 1px 3px rgba(0,0,0,0.5)',
-                textTransform: 'uppercase',
               }}
             >
               {statusLabel}
