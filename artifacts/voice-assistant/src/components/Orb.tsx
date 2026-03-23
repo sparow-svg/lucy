@@ -14,34 +14,37 @@ const PAL: Record<AssistantState | 'paused', {
   core: string; mid: string; deep: string;
   glow: string; ring: string; specular: string;
 }> = {
+  // Dormant/idle: subtle iridescent blue-grey so the orb is *just* visible through
+  // the screen blend-mode against the dark eye background — not black/invisible
   dormant: {
-    core: '#303030', mid: '#1a1a1a', deep: '#0a0a0a',
-    glow: 'transparent', ring: 'rgba(255,255,255,0.06)',
-    specular: 'rgba(255,255,255,0.14)',
+    core: '#3a3f5c', mid: '#22264a', deep: '#14172e',
+    glow: 'transparent', ring: 'rgba(120,140,220,0.10)',
+    specular: 'rgba(200,210,255,0.20)',
   },
   idle: {
-    core: '#242428', mid: '#161618', deep: '#080810',
-    glow: 'transparent', ring: 'rgba(255,255,255,0.04)',
-    specular: 'rgba(255,255,255,0.10)',
+    core: '#2e3450', mid: '#1c2040', deep: '#10132a',
+    glow: 'transparent', ring: 'rgba(100,130,220,0.08)',
+    specular: 'rgba(180,200,255,0.16)',
   },
   paused: {
-    core: '#1e1e22', mid: '#111114', deep: '#060608',
-    glow: 'transparent', ring: 'rgba(255,255,255,0.03)',
-    specular: 'rgba(255,255,255,0.08)',
+    core: '#28294a', mid: '#16183a', deep: '#0c0d20',
+    glow: 'transparent', ring: 'rgba(80,100,200,0.06)',
+    specular: 'rgba(160,180,240,0.12)',
   },
+  // Active states: bright blue/cyan — unchanged
   listening: {
     core: '#64D2FF', mid: '#0A84FF', deep: '#0051D5',
-    glow: 'rgba(10,132,255,0.42)', ring: 'rgba(10,132,255,0.28)',
+    glow: 'rgba(10,132,255,0.45)', ring: 'rgba(10,132,255,0.30)',
     specular: 'rgba(255,255,255,0.58)',
   },
   thinking: {
     core: '#5E9FFF', mid: '#0A6EFF', deep: '#0040CC',
-    glow: 'rgba(10,110,255,0.34)', ring: 'rgba(10,110,255,0.22)',
+    glow: 'rgba(10,110,255,0.36)', ring: 'rgba(10,110,255,0.22)',
     specular: 'rgba(255,255,255,0.48)',
   },
   speaking: {
     core: '#70D7FF', mid: '#34AADC', deep: '#0070C9',
-    glow: 'rgba(52,170,220,0.40)', ring: 'rgba(52,170,220,0.24)',
+    glow: 'rgba(52,170,220,0.42)', ring: 'rgba(52,170,220,0.26)',
     specular: 'rgba(255,255,255,0.52)',
   },
 };
@@ -63,7 +66,7 @@ export const Orb = memo(function Orb({
   const scale = useSpring(0.90, { stiffness: 180, damping: 24, mass: 0.9 });
 
   useEffect(() => {
-    if (isPaused)        scale.set(0.88);
+    if (isPaused)         scale.set(0.88);
     else if (isListening) scale.set(1 + micVolume * 0.16);
     else if (isSpeaking)  scale.set(1.05);
     else if (isThinking)  scale.set(0.96);
@@ -81,7 +84,7 @@ export const Orb = memo(function Orb({
   `;
 
   const shadow = isDark
-    ? `0 8px 32px rgba(0,0,0,0.55), 0 2px 8px rgba(0,0,0,0.35), inset 0 1px 0 ${p.specular}`
+    ? `0 8px 32px rgba(0,0,0,0.55), 0 2px 8px rgba(0,0,0,0.30), inset 0 1px 0 ${p.specular}`
     : `0 6px 28px ${p.glow}, 0 2px 8px rgba(0,0,0,0.12), inset 0 1px 0 ${p.specular}`;
 
   return (
@@ -93,16 +96,16 @@ export const Orb = memo(function Orb({
       }}
       onClick={onClick}
     >
-      {/* Ambient glow — active states only */}
+      {/* Blue ambient glow — active states: radiates outward from the orb */}
       {isActive && (
         <div
           className="absolute rounded-full pointer-events-none"
           style={{
-            width: SIZE * 1.7,
-            height: SIZE * 1.7,
-            background: `radial-gradient(circle, ${p.glow} 0%, transparent 70%)`,
-            filter: 'blur(18px)',
-            opacity: isListening ? 0.55 + micVolume * 0.40 : 0.48,
+            width: SIZE * 2.2,
+            height: SIZE * 2.2,
+            background: `radial-gradient(circle, ${p.glow} 0%, transparent 68%)`,
+            filter: 'blur(22px)',
+            opacity: isListening ? 0.60 + micVolume * 0.35 : 0.52,
           }}
         />
       )}

@@ -104,10 +104,9 @@ export default function Home({
   const [showProfile, setShowProfile] = useState(false);
   const [profileSection, setProfileSection] = useState<'main' | 'calendar'>('main');
 
-  // Calendar connections (persisted in localStorage)
-  const [connected, setConnected] = useState<Record<string, boolean>>(() => {
-    try { return JSON.parse(localStorage.getItem('lucy_calendar_connected') || '{}'); } catch { return {}; }
-  });
+  // Connected services — fetched from backend; never stored in localStorage
+  const [connected, setConnected] = useState<Record<string, boolean>>({});
+  const [servicesLoading, setServicesLoading] = useState(false);
   const [connecting, setConnecting] = useState<string | null>(null);
 
   // Calendar banner
@@ -134,24 +133,52 @@ export default function Home({
     if (triggered) setCalendarBanner(true);
   }, [messages, connected]);
 
-  const persistConnected = useCallback((next: Record<string, boolean>) => {
-    setConnected(next);
-    localStorage.setItem('lucy_calendar_connected', JSON.stringify(next));
+  // Fetch real connection status from backend
+  const fetchServices = useCallback(async () => {
+    setServicesLoading(true);
+    try {
+      const res = await fetch("/api/services", { credentials: "include" });
+      if (res.ok) {
+        const names: string[] = await res.json();
+        const map: Record<string, boolean> = {};
+        names.forEach(n => { map[n] = true; });
+        setConnected(map);
+      }
+    } catch { /* ignore */ }
+    finally { setServicesLoading(false); }
   }, []);
 
-  const handleConnect = (id: string) => {
+  // Fetch services when profile panel opens
+  useEffect(() => {
+    if (showProfile) fetchServices();
+  }, [showProfile, fetchServices]);
+
+  const handleConnect = async (id: string) => {
     setConnecting(id);
-    // Simulate OAuth flow (coming soon)
-    setTimeout(() => {
-      persistConnected({ ...connected, [id]: true });
-      setConnecting(null);
-    }, 1500);
+    try {
+      const res = await fetch(`/api/services/${id}/connect`, {
+        method: "POST",
+        credentials: "include",
+      });
+      if (res.ok) {
+        setConnected(prev => ({ ...prev, [id]: true }));
+      }
+    } catch { /* ignore */ }
+    finally { setConnecting(null); }
   };
 
-  const handleDisconnect = (id: string) => {
-    const next = { ...connected };
-    delete next[id];
-    persistConnected(next);
+  const handleDisconnect = async (id: string) => {
+    try {
+      await fetch(`/api/services/${id}/disconnect`, {
+        method: "DELETE",
+        credentials: "include",
+      });
+      setConnected(prev => {
+        const next = { ...prev };
+        delete next[id];
+        return next;
+      });
+    } catch { /* ignore */ }
   };
 
   const openCalendarPanel = () => {
@@ -287,6 +314,7 @@ export default function Home({
                       <CalendarSection
                         connected={connected}
                         connecting={connecting}
+                        loading={servicesLoading}
                         onConnect={handleConnect}
                         onDisconnect={handleDisconnect}
                         onBack={() => setProfileSection('main')}
@@ -678,11 +706,11 @@ function ProfileMain({
               borderRadius: 10, padding: "1px 7px",
               fontFamily: "'Inter', system-ui, sans-serif",
             }}>
-              {connectedCount}
+              {connectedCount} connected
             </span>
           ) : (
-            <span style={{ fontSize: 11, color: "#bbb", fontFamily: "'Inter', system-ui, sans-serif" }}>
-              Coming soon
+            <span style={{ fontSize: 11, color: "#0A84FF", fontFamily: "'Inter', system-ui, sans-serif" }}>
+              Connect
             </span>
           )}
           <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
@@ -712,12 +740,14 @@ function ProfileMain({
 function CalendarSection({
   connected,
   connecting,
+  loading,
   onConnect,
   onDisconnect,
   onBack,
 }: {
   connected: Record<string, boolean>;
   connecting: string | null;
+  loading?: boolean;
   onConnect: (id: string) => void;
   onDisconnect: (id: string) => void;
   onBack: () => void;
@@ -750,6 +780,11 @@ function CalendarSection({
 
       {/* Services */}
       <div style={{ padding: "8px 0" }}>
+        {loading && (
+          <p style={{ margin: "8px 16px", fontSize: 12, color: "#bbb", fontFamily: "'Inter', system-ui, sans-serif" }}>
+            Checking connection status…
+          </p>
+        )}
         {CALENDAR_SERVICES.map(svc => {
           const isConnected = connected[svc.id];
           const isConnecting = connecting === svc.id;

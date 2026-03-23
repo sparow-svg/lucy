@@ -76,6 +76,19 @@ artifacts-monorepo/
 - "Lucy remembers…" panel in sidebar with example placeholder items
 - Injected into AI system message; referenced naturally when relevant
 
+### Connected Services
+- DB table: `connected_services` (id, userId, serviceName, connectedAt)
+- API: `GET /api/services` → list connected service names; `POST /api/services/:name/connect`; `DELETE /api/services/:name/disconnect`
+- Allowed services: `google`, `outlook`, `gmail`
+- Profile panel fetches real status from backend on each open — never reads localStorage
+- "Connect" button shown when not connected; "Disconnect" when confirmed from DB
+- "Coming soon" label removed; replaced with "Connect" or "X connected" badge
+
+### Activation Nudges (First-Time Onboarding)
+- `POST /api/nudges/onboard` — idempotent; checks if any nudge exists for user (incl. dismissed); if none, creates 3 personalized welcome nudges
+- Called automatically on every login — safe to call repeatedly; no-op after first run
+- Onboarding nudges appear instantly in sidebar and profile panel
+
 ### Desktop App (Electron)
 - Located in `desktop/`
 - Loads deployed Lucy web app URL (or local dev server)

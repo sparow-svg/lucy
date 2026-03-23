@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { db, nudges } from "@workspace/db";
-import { eq, and, asc } from "drizzle-orm";
+import { eq, and, asc, count } from "drizzle-orm";
 
 const router: IRouter = Router();
 
@@ -17,16 +17,63 @@ router.get("/", requireAuth, async (req: any, res) => {
     const rows = await db
       .select()
       .from(nudges)
-      .where(
-        and(
-          eq(nudges.userId, req.session.userId),
-          eq(nudges.dismissed, false)
-        )
-      )
+      .where(and(eq(nudges.userId, req.session.userId), eq(nudges.dismissed, false)))
       .orderBy(asc(nudges.createdAt));
     res.json(rows);
-  } catch (err) {
+  } catch {
     res.status(500).json({ error: "Failed to fetch nudges" });
+  }
+});
+
+// POST /api/nudges/onboard — create activation nudges for first-time users only
+// Safe to call multiple times; skips if user already has any nudge ever created.
+router.post("/onboard", requireAuth, async (req: any, res) => {
+  try {
+    const userId = req.session.userId as number;
+    // Count all nudges (including dismissed) for this user
+    const [{ total }] = await db
+      .select({ total: count() })
+      .from(nudges)
+      .where(eq(nudges.userId, userId));
+
+    if (Number(total) > 0) {
+      // Already onboarded — return empty array (no-op)
+      res.json([]);
+      return;
+    }
+
+    // Get the user's first name from session (stored during login)
+    const firstName: string = (req.session as any).firstName || "there";
+
+    const onboardingNudges = [
+      {
+        userId,
+        text: `Welcome, ${firstName}! You can ask me to remember things for you anytime.`,
+        dismissed: false,
+        dueAt: null,
+      },
+      {
+        userId,
+        text: `Try saying "Lucy, nudge me to..." and I'll remind you at the right time.`,
+        dismissed: false,
+        dueAt: null,
+      },
+      {
+        userId,
+        text: `I remember things across conversations. Just tell me what matters to you.`,
+        dismissed: false,
+        dueAt: null,
+      },
+    ];
+
+    const rows = await db
+      .insert(nudges)
+      .values(onboardingNudges)
+      .returning();
+
+    res.status(201).json(rows);
+  } catch {
+    res.status(500).json({ error: "Failed to create onboarding nudges" });
   }
 });
 
@@ -47,7 +94,7 @@ router.post("/", requireAuth, async (req: any, res) => {
       })
       .returning();
     res.status(201).json(row);
-  } catch (err) {
+  } catch {
     res.status(500).json({ error: "Failed to create nudge" });
   }
 });

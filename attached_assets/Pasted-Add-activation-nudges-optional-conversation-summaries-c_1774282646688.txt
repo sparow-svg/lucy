@@ -1,0 +1,55 @@
+Add activation nudges, optional conversation summaries, calendar/email sync fixes, orb/UI polish, and download links. Maintain all current voice-first behavior, Memory & Nudges logic, and Electron/web parity.
+
+⸻
+
+1️⃣ Activation Nudges for First-Time Users
+	•	Detect first-time user session.
+	•	Automatically create and trigger 2–3 onboarding nudges in the first interaction:
+	•	Example:
+• “Welcome, [firstName]! You can ask me to remember things or set nudges.”
+• “Try saying ‘Lucy, nudge me to…’ to stay on track.”
+	•	Nudges should appear in sidebar and/or profile panel and be spoken naturally.
+	•	Do not repeat nudges once dismissed.
+
+⸻
+
+2️⃣ Optional Conversation Summaries
+	•	Add collapsible “Conversation Summary” panel below main conversation area.
+	•	Summaries update dynamically after each session or on user request.
+	•	Show only key points or actions, no full transcript.
+	•	Historical transcripts remain in database but are never displayed in the UI.
+	•	Ensure summary panel works both in web and desktop app.
+
+⸻
+
+3️⃣ Calendar & Email Sync Fix
+	•	Currently placeholder “connected” should instead say “Coming Soon” if no OAuth completed.
+	•	Implement actual OAuth flow for Google Calendar & Gmail (read-only initially).
+	•	When user mentions scheduling/email in conversation, prompt to connect accounts.
+	•	Once connected, proactively notify of relevant items (emails, events) without flooding.
+	•	Keep UI consistent: display connection status in profile panel.
+
+⸻
+
+4️⃣ Orb & UI Polish
+	•	Orb must maintain mix-blend-mode effect blending naturally with the pupil background.
+	•	Idle/dormant: dark orb blends in; active (listening/speaking): subtle blue glow radiates.
+	•	Sidebar, Memory panel, Nudges, and profile UI remain collapsible, slim, rounded, frosted/blurred white background.
+	•	Ensure consistent styling across web and desktop.
+
+⸻
+
+5️⃣ Download Links / Footers
+	•	Add “Download for Mac” button in footer for desktop app download.
+	•	Add web app link in footer for direct web access.
+	•	Links should be clearly labeled and functional on all pages.
+
+⸻
+
+6️⃣ Testing & Verification
+	•	First-time session triggers activation nudges.
+	•	Optional summary panel updates correctly; no text transcripts are visible.
+	•	Orb blending effect works identically in web and desktop.
+	•	Memory items & Nudges remain synced and contextually referenced.
+	•	Google Calendar & Gmail OAuth shows accurate connection status.
+	•	Desktop download button works; web app link navigates correctly.

@@ -98,13 +98,32 @@ function AppContent() {
     } catch { /* ignore */ }
   }, []);
 
+  // Trigger onboarding nudges once for new users
+  const triggerOnboarding = useCallback(async () => {
+    try {
+      const res = await fetch("/api/nudges/onboard", {
+        method: "POST",
+        credentials: "include",
+      });
+      if (res.ok) {
+        const created: Nudge[] = await res.json();
+        if (created.length > 0) {
+          setNudgesList(prev => [...created, ...prev]);
+        }
+      }
+    } catch { /* ignore */ }
+  }, []);
+
   useEffect(() => {
     if (screen === "assistant") {
       fetchConversations();
       fetchMemories();
-      fetchNudges();
+      fetchNudges().then(() => {
+        // Call onboarding after nudges are loaded — it's idempotent
+        triggerOnboarding();
+      });
     }
-  }, [screen, fetchConversations, fetchMemories, fetchNudges]);
+  }, [screen, fetchConversations, fetchMemories, fetchNudges, triggerOnboarding]);
 
   const handleAuthSuccess = useCallback(() => {
     setAuthModal({ open: false, tab: "signup" });
