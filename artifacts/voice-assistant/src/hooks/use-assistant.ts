@@ -1,6 +1,5 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { AudioQueue } from "@/lib/audio-queue";
-import { useGetAssistantContext } from "@/hooks/use-queries";
 
 export type AssistantState = 'dormant' | 'idle' | 'listening' | 'thinking' | 'speaking';
 
@@ -22,7 +21,7 @@ export function useAssistant() {
   const [micVolume, setMicVolume] = useState(0);
   const [isSessionActive, setIsSessionActive] = useState(false);
 
-  // All mutable state in refs so callbacks always see fresh values
+  // Stable refs — callbacks always see fresh values
   const stateRef = useRef<AssistantState>('dormant');
   const queue = useRef(new AudioQueue());
   const recorder = useRef<MediaRecorder | null>(null);
@@ -30,13 +29,13 @@ export function useAssistant() {
   const convId = useRef<number | null>(null);
   const micStream = useRef<MediaStream | null>(null);
   const analyser = useRef<AnalyserNode | null>(null);
-  const micCtx = useRef<AudioContext | null>(null);
+  const sharedCtx = useRef<AudioContext | null>(null); // ONE AudioContext for both mic + playback
   const pollTimer = useRef<ReturnType<typeof setInterval> | null>(null);
   const silenceStart = useRef<number | null>(null);
-  const hasInit = useRef(false);         // guard: conversation created once
-  const hasGreeted = useRef(false);      // guard: greeting fires once
-  const isActivated = useRef(false);     // guard: wake-word fires once
-  const isProcessing = useRef(false);    // guard: one voice request at a time
+  const hasInit = useRef(false);
+  const hasGreeted = useRef(false);
+  const isActivated = useRef(false);
+  const isProcessing = useRef(false);
   const isSessionRef = useRef(false);
   const abortCtrl = useRef<AbortController | null>(null);
 
@@ -44,10 +43,6 @@ export function useAssistant() {
     stateRef.current = s;
     setState(s);
   };
-
-  const { data: contextData } = useGetAssistantContext({
-    query: { retry: false, refetchOnWindowFocus: false }
-  });
 
   // ── SSE reader ──────────────────────────────────────────────────────────
   const readSSE = async (
@@ -75,8 +70,8 @@ export function useAssistant() {
           if (raw === '[DONE]') continue;
           try {
             const p = JSON.parse(raw);
-            if (p.type === 'transcript' || p.content) onText(p.data ?? p.content);
-            else if (p.type === 'audio') onAudio(p.data);
+            if (p.type === 'transcript' || p.content) onText(p.data ?? p.content ?? '');
+            else if (p.type === 'audio' && p.data) onAudio(p.data);
           } catch { /* skip bad chunk */ }
         }
       }
@@ -92,14 +87,25 @@ export function useAssistant() {
   const patchMsg = (id: string, content: string) =>
     setMessages(prev => prev.map(m => m.id === id ? { ...m, content } : m));
 
-  // ── Open persistent mic (called once on activation) ───────────────────
+  // ── Open persistent mic + AudioContext (called once on activation) ────────
   const openMic = async () => {
     if (micStream.current) return;
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       micStream.current = stream;
+
+      // ONE shared AudioContext for both mic analysis and TTS playback
       const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
-      micCtx.current = ctx;
+      sharedCtx.current = ctx;
+
+      // Resume immediately — mic permission counts as user interaction
+      if (ctx.state === 'suspended') {
+        try { await ctx.resume(); } catch { /* ignore */ }
+      }
+
+      // Give AudioQueue the same context so it never creates its own
+      queue.current.setContext(ctx);
+
       const src = ctx.createMediaStreamSource(stream);
       const an = ctx.createAnalyser();
       an.fftSize = 256;
@@ -113,6 +119,7 @@ export function useAssistant() {
   const startPoll = () => {
     if (pollTimer.current) return;
     const data = new Uint8Array(analyser.current?.frequencyBinCount ?? 128);
+
     pollTimer.current = setInterval(() => {
       const an = analyser.current;
       if (!an) return;
@@ -133,7 +140,7 @@ export function useAssistant() {
         if (abortCtrl.current) { abortCtrl.current.abort(); abortCtrl.current = null; }
         isProcessing.current = false;
         silenceStart.current = null;
-        startListening();
+        doStartListening();
         return;
       }
 
@@ -143,7 +150,7 @@ export function useAssistant() {
           if (!silenceStart.current) silenceStart.current = Date.now();
           else if (Date.now() - silenceStart.current > SILENCE_MS) {
             silenceStart.current = null;
-            stopListening();
+            doStopListening();
           }
         } else {
           silenceStart.current = null;
@@ -157,11 +164,14 @@ export function useAssistant() {
     setMicVolume(0);
   };
 
-  // ── Listen / stop ────────────────────────────────────────────────────────
-  const startListening = () => {
+  // ── Listen / stop ─────────────────────────────────────────────────────────
+  // Using stable refs so no stale-closure issues in intervals/timeouts
+  const doStartListening = useCallback(() => {
     const stream = micStream.current;
-    if (!stream || isProcessing.current) return;
-    if (stateRef.current === 'thinking' || stateRef.current === 'speaking') return;
+    if (!stream) return;
+    if (isProcessing.current) return;
+    const s = stateRef.current;
+    if (s === 'thinking' || s === 'speaking' || s === 'listening') return;
 
     chunks.current = [];
     try {
@@ -170,7 +180,7 @@ export function useAssistant() {
       rec.ondataavailable = e => { if (e.data.size > 0) chunks.current.push(e.data); };
       rec.onstop = () => {
         const blob = new Blob(chunks.current, { type: rec.mimeType });
-        processVoice(blob);
+        doProcessVoice(blob);
       };
       rec.start();
       setStateSafe('listening');
@@ -178,21 +188,27 @@ export function useAssistant() {
     } catch {
       setStateSafe('idle');
     }
-  };
+  }, []);
 
-  const stopListening = () => {
+  const doStopListening = useCallback(() => {
     silenceStart.current = null;
     if (recorder.current?.state === 'recording') {
       recorder.current.stop();
       setStateSafe('thinking');
     }
-  };
+  }, []);
 
   // ── Process voice input ───────────────────────────────────────────────────
-  const processVoice = async (blob: Blob) => {
+  const doProcessVoice = useCallback(async (blob: Blob) => {
     if (isProcessing.current) return;
     if (!convId.current) { setStateSafe('idle'); return; }
     isProcessing.current = true;
+
+    // Ensure the AudioContext is running before we start (re-resume if needed)
+    const ctx = sharedCtx.current;
+    if (ctx && ctx.state === 'suspended') {
+      try { await ctx.resume(); } catch { /* ignore */ }
+    }
 
     try {
       setStateSafe('thinking');
@@ -214,7 +230,7 @@ export function useAssistant() {
         signal: ctrl.signal,
       });
 
-      if (!resp.ok) throw new Error('voice failed');
+      if (!resp.ok) throw new Error(`voice failed: ${resp.status}`);
 
       setStateSafe('speaking');
       let text = '';
@@ -223,37 +239,51 @@ export function useAssistant() {
 
       await readSSE(resp,
         t => { text += t; patchMsg(id, text); },
-        a => queue.current.playChunk(a),
+        a => { queue.current.playChunk(a); },
         ctrl.signal
       );
-    } catch {
-      /* aborted or network error */
+
+    } catch (err) {
+      // Aborted or network error — go idle so loop can continue
+      if ((err as Error)?.name !== 'AbortError') {
+        console.error('[Lucy] voice error:', err);
+      }
+      setStateSafe('idle');
     } finally {
       isProcessing.current = false;
       abortCtrl.current = null;
     }
-  };
+  }, []);
 
-  // ── Poll: speaking → idle → listen ────────────────────────────────────────
+  // ── Speaking → idle → listen loop ─────────────────────────────────────────
+  // Polls every 100ms; if speaking and audio queue is done, auto-restart listening
   useEffect(() => {
     const iv = setInterval(() => {
       if (stateRef.current === 'speaking' && !queue.current.isPlaying) {
         setStateSafe('idle');
         if (isSessionRef.current && !isProcessing.current) {
           setTimeout(() => {
-            if (stateRef.current === 'idle') startListening();
-          }, 100);
+            if (stateRef.current === 'idle' && !isProcessing.current) {
+              doStartListening();
+            }
+          }, 120);
         }
       }
-    }, 200);
+    }, 100);
     return () => clearInterval(iv);
-  }, []);
+  }, [doStartListening]);
 
   // ── Greeting ────────────────────────────────────────────────────────────────
-  const greet = async () => {
+  const doGreet = useCallback(async () => {
     if (hasGreeted.current) return;
     hasGreeted.current = true;
     if (!convId.current) { setStateSafe('idle'); return; }
+
+    // Ensure AudioContext is running before greeting audio arrives
+    const ctx = sharedCtx.current;
+    if (ctx && ctx.state === 'suspended') {
+      try { await ctx.resume(); } catch { /* ignore */ }
+    }
 
     try {
       setStateSafe('thinking');
@@ -263,7 +293,7 @@ export function useAssistant() {
       const resp = await fetch('/api/openai/proactive-greeting', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ context: JSON.stringify(contextData ?? {}) }),
+        body: JSON.stringify({}),
         signal: ctrl.signal,
       });
 
@@ -276,7 +306,7 @@ export function useAssistant() {
 
       await readSSE(resp,
         t => { text += t; patchMsg(id, text); },
-        a => queue.current.playChunk(a),
+        a => { queue.current.playChunk(a); },
         ctrl.signal
       );
     } catch {
@@ -284,7 +314,7 @@ export function useAssistant() {
     } finally {
       abortCtrl.current = null;
     }
-  };
+  }, []);
 
   // ── Init: pre-create conversation once ────────────────────────────────────
   useEffect(() => {
@@ -328,7 +358,7 @@ export function useAssistant() {
               recognition?.abort();
               await openMic();
               startPoll();
-              greet();
+              doGreet();
               return;
             }
           }
@@ -336,13 +366,11 @@ export function useAssistant() {
 
         recognition.onend = () => {
           if (!isActivated.current && alive) {
-            // Restart after short delay (Safari requirement)
             setTimeout(start, 200);
           }
         };
 
         recognition.onerror = (e: SpeechRecognitionErrorEvent) => {
-          // 'no-speech' and 'aborted' are expected — restart
           if (!isActivated.current && alive && e.error !== 'not-allowed') {
             setTimeout(start, 300);
           }
@@ -358,23 +386,23 @@ export function useAssistant() {
       alive = false;
       try { recognition?.abort(); } catch { /* ignore */ }
     };
-  }, []); // empty deps — only runs once on mount
+  }, [doGreet]);
 
   // ── Manual orb tap ────────────────────────────────────────────────────────
-  const toggleRecording = () => {
+  const toggleRecording = useCallback(() => {
     if (!isSessionRef.current) return;
     const s = stateRef.current;
     if (s === 'listening') {
-      stopListening();
+      doStopListening();
     } else if (s === 'idle') {
-      startListening();
+      doStartListening();
     } else if (s === 'speaking') {
       queue.current.stop();
       if (abortCtrl.current) { abortCtrl.current.abort(); abortCtrl.current = null; }
       isProcessing.current = false;
-      startListening();
+      doStartListening();
     }
-  };
+  }, [doStartListening, doStopListening]);
 
   // ── Cleanup on unmount ────────────────────────────────────────────────────
   useEffect(() => {
@@ -383,7 +411,7 @@ export function useAssistant() {
       queue.current.stop();
       if (abortCtrl.current) abortCtrl.current.abort();
       if (micStream.current) micStream.current.getTracks().forEach(t => t.stop());
-      if (micCtx.current) micCtx.current.close().catch(() => {});
+      if (sharedCtx.current) sharedCtx.current.close().catch(() => {});
     };
   }, []);
 

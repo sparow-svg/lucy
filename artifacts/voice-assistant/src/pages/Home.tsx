@@ -34,15 +34,8 @@ export default function Home() {
         }}
       />
 
-      {/* Fixed header — frosted glass strip, no visible border */}
-      <header
-        className="fixed top-0 left-0 right-0 z-50 flex items-center px-8 h-16"
-        style={{
-          backdropFilter: 'blur(12px)',
-          WebkitBackdropFilter: 'blur(12px)',
-          background: 'rgba(0,30,80,0.15)',
-        }}
-      >
+      {/* Fixed header — fully transparent, image shows through */}
+      <header className="fixed top-0 left-0 right-0 z-50 flex items-center px-8 h-16">
         <span
           className="select-none"
           style={{
