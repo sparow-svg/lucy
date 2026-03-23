@@ -40,7 +40,7 @@ jobs:
           files: desktop/dist/*.dmg
           generate_release_notes: true
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
 
   build-win:
     runs-on: windows-latest
@@ -75,4 +75,4 @@ jobs:
           files: desktop/dist/*.exe
           generate_release_notes: true
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
