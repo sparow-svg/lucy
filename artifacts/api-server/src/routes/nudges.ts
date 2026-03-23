@@ -54,13 +54,13 @@ router.post("/onboard", requireAuth, async (req: any, res) => {
       },
       {
         userId,
-        text: `Try saying "Lucy, nudge me to..." and I'll remind you at the right time.`,
+        text: `Say "Lucy, nudge me to…" and I'll remind you at the right time.`,
         dismissed: false,
         dueAt: null,
       },
       {
         userId,
-        text: `I remember things across conversations. Just tell me what matters to you.`,
+        text: `I remember things across conversations. Just tell me what matters to you, and I'll keep track.`,
         dismissed: false,
         dueAt: null,
       },

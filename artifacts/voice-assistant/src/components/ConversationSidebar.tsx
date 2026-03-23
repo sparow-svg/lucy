@@ -10,9 +10,7 @@ interface ConversationSidebarProps {
   onNew: () => void;
   onDelete: (id: number) => void;
   onRename: (id: number, title: string) => void;
-  onAddMemory: (text: string) => void;
   onDeleteMemory: (id: number) => void;
-  onAddNudge: (text: string, dueAt?: string) => void;
   onDismissNudge: (id: number) => void;
   onClose: () => void;
 }
@@ -132,21 +130,13 @@ function ConvItem({
   );
 }
 
-function NudgesPanel({ nudges, onAdd, onDismiss }: {
+// ── Nudges panel — display only, voice-input only ────────────────────────────
+function NudgesPanel({ nudges, onDismiss }: {
   nudges: Nudge[];
-  onAdd: (text: string, dueAt?: string) => void;
   onDismiss: (id: number) => void;
 }) {
   const [open, setOpen] = useState(true);
-  const [newText, setNewText] = useState("");
   const [hoveredId, setHoveredId] = useState<number | null>(null);
-
-  const submit = () => {
-    const t = newText.trim();
-    if (!t) return;
-    onAdd(t);
-    setNewText("");
-  };
 
   return (
     <div style={{ borderTop: "1px solid rgba(0,0,0,0.08)", marginTop: 2 }}>
@@ -186,12 +176,12 @@ function NudgesPanel({ nudges, onAdd, onDismiss }: {
           {nudges.length === 0 ? (
             <p style={{
               fontSize: 11, color: "#ccc", fontFamily: "'Inter', system-ui, sans-serif",
-              margin: "0 8px 10px", lineHeight: 1.5, fontStyle: "italic",
+              margin: "0 8px 4px", lineHeight: 1.5, fontStyle: "italic",
             }}>
-              No active nudges. Add one below or tell Lucy: "nudge me to…"
+              Say "Lucy, nudge me to…" to add one.
             </p>
           ) : (
-            <div style={{ marginBottom: 8 }}>
+            <div>
               {nudges.map(n => (
                 <div
                   key={n.id}
@@ -234,57 +224,19 @@ function NudgesPanel({ nudges, onAdd, onDismiss }: {
               ))}
             </div>
           )}
-          <div style={{ display: "flex", gap: 6 }}>
-            <input
-              value={newText}
-              onChange={e => setNewText(e.target.value)}
-              onKeyDown={e => { if (e.key === "Enter") submit(); }}
-              placeholder="Add a nudge…"
-              style={{
-                flex: 1, fontSize: 12, fontFamily: "'Inter', system-ui, sans-serif",
-                color: "#333", border: "1.5px solid #e8e8e8",
-                borderRadius: 7, padding: "7px 10px", outline: "none", backgroundColor: "#fafafa",
-              }}
-              onFocus={e => (e.currentTarget.style.borderColor = "#0A84FF")}
-              onBlur={e => (e.currentTarget.style.borderColor = "#e8e8e8")}
-            />
-            <button
-              onClick={submit}
-              disabled={!newText.trim()}
-              style={{
-                flexShrink: 0, padding: "0 10px", fontSize: 12, fontWeight: 600,
-                fontFamily: "'Inter', system-ui, sans-serif",
-                backgroundColor: newText.trim() ? "#0A84FF" : "#e0e0e0",
-                color: newText.trim() ? "#fff" : "#aaa",
-                border: "none", borderRadius: 7,
-                cursor: newText.trim() ? "pointer" : "not-allowed", transition: "background-color 0.15s",
-              }}
-            >
-              Add
-            </button>
-          </div>
         </div>
       )}
     </div>
   );
 }
 
-function MemoryPanel({ memories, onAdd, onDelete }: {
+// ── Memory panel — display only, voice-input only ────────────────────────────
+function MemoryPanel({ memories, onDelete }: {
   memories: Memory[];
-  onAdd: (text: string) => void;
   onDelete: (id: number) => void;
 }) {
   const [open, setOpen] = useState(true);
-  const [newText, setNewText] = useState("");
   const [hoveredId, setHoveredId] = useState<number | null>(null);
-  const [showTooltip, setShowTooltip] = useState(false);
-
-  const submit = () => {
-    const t = newText.trim();
-    if (!t) return;
-    onAdd(t);
-    setNewText("");
-  };
 
   return (
     <div style={{ borderTop: "1px solid rgba(0,0,0,0.08)", marginTop: 2 }}>
@@ -296,38 +248,9 @@ function MemoryPanel({ memories, onAdd, onDelete }: {
           fontFamily: "'Inter', system-ui, sans-serif",
         }}
       >
-        <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
-          <span style={{ fontSize: 11, fontWeight: 600, color: "#888", letterSpacing: "0.06em", textTransform: "uppercase" }}>
-            Lucy remembers…
-          </span>
-          {/* Info tooltip trigger */}
-          <div
-            style={{ position: "relative" }}
-            onMouseEnter={e => { e.stopPropagation(); setShowTooltip(true); }}
-            onMouseLeave={() => setShowTooltip(false)}
-            onClick={e => e.stopPropagation()}
-          >
-            <svg width="12" height="12" viewBox="0 0 12 12" fill="none" style={{ cursor: "help", color: "#ccc" }}>
-              <circle cx="6" cy="6" r="5" stroke="currentColor" strokeWidth="1.2"/>
-              <text x="6" y="9" textAnchor="middle" fontSize="7" fill="currentColor" fontWeight="700">i</text>
-            </svg>
-            {showTooltip && (
-              <div style={{
-                position: "absolute", bottom: "calc(100% + 6px)", left: "50%",
-                transform: "translateX(-50%)",
-                backgroundColor: "#111", color: "#fff",
-                fontSize: 11, lineHeight: 1.5,
-                fontFamily: "'Inter', system-ui, sans-serif",
-                padding: "8px 12px", borderRadius: 8,
-                width: 190, zIndex: 100,
-                boxShadow: "0 4px 16px rgba(0,0,0,0.3)",
-                pointerEvents: "none",
-              }}>
-                Lucy can remember things you tell her — she'll bring them up later to help you stay on track.
-              </div>
-            )}
-          </div>
-        </div>
+        <span style={{ fontSize: 11, fontWeight: 600, color: "#888", letterSpacing: "0.06em", textTransform: "uppercase" }}>
+          Lucy remembers
+        </span>
         <svg
           width="12" height="12" viewBox="0 0 12 12" fill="none"
           style={{ color: "#aaa", transform: open ? "rotate(180deg)" : "rotate(0deg)", transition: "transform 0.2s" }}
@@ -339,24 +262,14 @@ function MemoryPanel({ memories, onAdd, onDelete }: {
       {open && (
         <div style={{ padding: "0 8px 12px" }}>
           {memories.length === 0 ? (
-            <div style={{ marginBottom: 8 }}>
-              {[
-                "I need to submit the report by Friday.",
-                "My favorite coffee is black.",
-                "My project deadline is March 28.",
-              ].map((example, i) => (
-                <div key={i} style={{ display: "flex", alignItems: "flex-start", gap: 6, padding: "5px 8px", borderRadius: 6 }}>
-                  <span style={{ fontSize: 11, color: "#ccc", fontFamily: "'Inter', system-ui, sans-serif", flex: 1, lineHeight: 1.5, fontStyle: "italic" }}>
-                    {example}
-                  </span>
-                </div>
-              ))}
-              <p style={{ fontSize: 11, color: "#d0d0d0", fontFamily: "'Inter', system-ui, sans-serif", margin: "4px 8px 0", lineHeight: 1.5, fontStyle: "italic" }}>
-                Add things Lucy should remember across all conversations.
-              </p>
-            </div>
+            <p style={{
+              fontSize: 11, color: "#ccc", fontFamily: "'Inter', system-ui, sans-serif",
+              margin: "0 8px 4px", lineHeight: 1.5, fontStyle: "italic",
+            }}>
+              E.g. I like coffee with blueberries
+            </p>
           ) : (
-            <div style={{ marginBottom: 8 }}>
+            <div>
               {memories.map(m => (
                 <div
                   key={m.id}
@@ -391,35 +304,6 @@ function MemoryPanel({ memories, onAdd, onDelete }: {
               ))}
             </div>
           )}
-          <div style={{ display: "flex", gap: 6 }}>
-            <input
-              value={newText}
-              onChange={e => setNewText(e.target.value)}
-              onKeyDown={e => { if (e.key === "Enter") submit(); }}
-              placeholder="Add a memory…"
-              style={{
-                flex: 1, fontSize: 12, fontFamily: "'Inter', system-ui, sans-serif",
-                color: "#333", border: "1.5px solid #e8e8e8",
-                borderRadius: 7, padding: "7px 10px", outline: "none", backgroundColor: "#fafafa",
-              }}
-              onFocus={e => (e.currentTarget.style.borderColor = "#0A84FF")}
-              onBlur={e => (e.currentTarget.style.borderColor = "#e8e8e8")}
-            />
-            <button
-              onClick={submit}
-              disabled={!newText.trim()}
-              style={{
-                flexShrink: 0, padding: "0 12px", fontSize: 12, fontWeight: 600,
-                fontFamily: "'Inter', system-ui, sans-serif",
-                backgroundColor: newText.trim() ? "#0A84FF" : "#e0e0e0",
-                color: newText.trim() ? "#fff" : "#aaa",
-                border: "none", borderRadius: 7,
-                cursor: newText.trim() ? "pointer" : "not-allowed", transition: "background-color 0.15s",
-              }}
-            >
-              Add
-            </button>
-          </div>
         </div>
       )}
     </div>
@@ -429,7 +313,7 @@ function MemoryPanel({ memories, onAdd, onDelete }: {
 export function ConversationSidebar({
   conversations, memories, nudges,
   activeConvId, onSelect, onNew, onDelete, onRename,
-  onAddMemory, onDeleteMemory, onAddNudge, onDismissNudge, onClose,
+  onDeleteMemory, onDismissNudge, onClose,
 }: ConversationSidebarProps) {
   return (
     <div
@@ -507,17 +391,15 @@ export function ConversationSidebar({
           )}
         </div>
 
-        {/* Nudges panel */}
+        {/* Nudges panel — view + dismiss only */}
         <NudgesPanel
           nudges={nudges}
-          onAdd={onAddNudge}
           onDismiss={onDismissNudge}
         />
 
-        {/* Memory panel */}
+        {/* Memory panel — view + delete only */}
         <MemoryPanel
           memories={memories}
-          onAdd={onAddMemory}
           onDelete={onDeleteMemory}
         />
       </div>

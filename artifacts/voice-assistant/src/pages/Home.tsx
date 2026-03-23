@@ -2,7 +2,7 @@ import { useAssistant } from "@/hooks/use-assistant";
 import type { ChatMessage } from "@/hooks/use-assistant";
 import { Orb } from "@/components/Orb";
 import { motion, AnimatePresence } from "framer-motion";
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef } from "react";
 
 const THINKING_FILLERS = ["Hmm…", "Got it…", "Right…", "Let me think…", "Sure…"];
 
@@ -28,48 +28,6 @@ function useBlink() {
   return phase;
 }
 
-const CALENDAR_KEYWORDS = [
-  'calendar', 'schedule', 'meeting', 'appointment', 'event', 'remind',
-  'deadline', 'due date', 'book', 'booking', 'availability', 'slot',
-  'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday',
-  'next week', 'tomorrow', 'this week', 'upcoming',
-];
-
-function hasCalendarMention(text: string): boolean {
-  const lower = text.toLowerCase();
-  return CALENDAR_KEYWORDS.some(kw => lower.includes(kw));
-}
-
-interface CalendarService {
-  id: 'google' | 'outlook';
-  label: string;
-  icon: React.ReactNode;
-}
-
-const CALENDAR_SERVICES: CalendarService[] = [
-  {
-    id: 'google',
-    label: 'Google Calendar',
-    icon: (
-      <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
-        <rect x="2" y="2" width="14" height="14" rx="2" fill="#4285F4" opacity="0.15"/>
-        <path d="M6 2V4M12 2V4M2 7H16" stroke="#4285F4" strokeWidth="1.4" strokeLinecap="round"/>
-        <text x="9" y="14" textAnchor="middle" fontSize="6" fill="#4285F4" fontWeight="700">31</text>
-      </svg>
-    ),
-  },
-  {
-    id: 'outlook',
-    label: 'Outlook Calendar',
-    icon: (
-      <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
-        <rect x="2" y="2" width="14" height="14" rx="2" fill="#0078D4" opacity="0.15"/>
-        <path d="M6 2V4M12 2V4M2 7H16" stroke="#0078D4" strokeWidth="1.4" strokeLinecap="round"/>
-        <text x="9" y="14" textAnchor="middle" fontSize="6" fill="#0078D4" fontWeight="700">31</text>
-      </svg>
-    ),
-  },
-];
 
 interface HomeProps {
   firstName?: string;
@@ -102,91 +60,12 @@ export default function Home({
 
   // Profile panel
   const [showProfile, setShowProfile] = useState(false);
-  const [profileSection, setProfileSection] = useState<'main' | 'calendar'>('main');
-
-  // Connected services — fetched from backend; never stored in localStorage
-  const [connected, setConnected] = useState<Record<string, boolean>>({});
-  const [servicesLoading, setServicesLoading] = useState(false);
-  const [connecting, setConnecting] = useState<string | null>(null);
-
-  // Calendar banner
-  const [calendarBanner, setCalendarBanner] = useState(false);
-  const bannerDismissedRef = useRef(false);
-  const lastBannerCheckRef = useRef(0);
 
   useEffect(() => {
     if (state !== 'thinking') return;
     const iv = setInterval(() => setFillerIdx(i => (i + 1) % THINKING_FILLERS.length), 1800);
     return () => clearInterval(iv);
   }, [state]);
-
-  // Calendar keyword detection in Lucy's messages
-  useEffect(() => {
-    if (bannerDismissedRef.current) return;
-    const anyConnected = Object.values(connected).some(Boolean);
-    if (anyConnected) return;
-    const now = Date.now();
-    if (now - lastBannerCheckRef.current < 3000) return;
-    lastBannerCheckRef.current = now;
-    const recent = messages.filter(m => m.role === 'assistant').slice(-3);
-    const triggered = recent.some(m => hasCalendarMention(m.content));
-    if (triggered) setCalendarBanner(true);
-  }, [messages, connected]);
-
-  // Fetch real connection status from backend
-  const fetchServices = useCallback(async () => {
-    setServicesLoading(true);
-    try {
-      const res = await fetch("/api/services", { credentials: "include" });
-      if (res.ok) {
-        const names: string[] = await res.json();
-        const map: Record<string, boolean> = {};
-        names.forEach(n => { map[n] = true; });
-        setConnected(map);
-      }
-    } catch { /* ignore */ }
-    finally { setServicesLoading(false); }
-  }, []);
-
-  // Fetch services when profile panel opens
-  useEffect(() => {
-    if (showProfile) fetchServices();
-  }, [showProfile, fetchServices]);
-
-  const handleConnect = async (id: string) => {
-    setConnecting(id);
-    try {
-      const res = await fetch(`/api/services/${id}/connect`, {
-        method: "POST",
-        credentials: "include",
-      });
-      if (res.ok) {
-        setConnected(prev => ({ ...prev, [id]: true }));
-      }
-    } catch { /* ignore */ }
-    finally { setConnecting(null); }
-  };
-
-  const handleDisconnect = async (id: string) => {
-    try {
-      await fetch(`/api/services/${id}/disconnect`, {
-        method: "DELETE",
-        credentials: "include",
-      });
-      setConnected(prev => {
-        const next = { ...prev };
-        delete next[id];
-        return next;
-      });
-    } catch { /* ignore */ }
-  };
-
-  const openCalendarPanel = () => {
-    setCalendarBanner(false);
-    bannerDismissedRef.current = true;
-    setProfileSection('calendar');
-    setShowProfile(true);
-  };
 
   const statusLabel =
     isPaused            ? 'Say "Lucy" to continue' :
@@ -260,7 +139,7 @@ export default function Home({
         {firstName && firstName !== "there" && (
           <div style={{ position: "relative" }}>
             <button
-              onClick={() => { setShowProfile(s => !s); setProfileSection('main'); }}
+              onClick={() => setShowProfile(s => !s)}
               style={{
                 background: "none", border: "none", cursor: "pointer",
                 padding: "4px 10px",
@@ -301,25 +180,12 @@ export default function Home({
                       boxShadow: "0 8px 32px rgba(0,0,0,0.14)",
                     }}
                   >
-                    {profileSection === 'main' ? (
-                      <ProfileMain
-                        firstName={firstName}
-                        connected={connected}
-                        nudges={nudges}
-                        onOpenCalendar={() => setProfileSection('calendar')}
-                        onDismissNudge={(id) => onDismissNudge?.(id)}
-                        onSignOut={() => { setShowProfile(false); onSignOut?.(); }}
-                      />
-                    ) : (
-                      <CalendarSection
-                        connected={connected}
-                        connecting={connecting}
-                        loading={servicesLoading}
-                        onConnect={handleConnect}
-                        onDisconnect={handleDisconnect}
-                        onBack={() => setProfileSection('main')}
-                      />
-                    )}
+                    <ProfileMain
+                      firstName={firstName}
+                      nudges={nudges}
+                      onDismissNudge={(id) => onDismissNudge?.(id)}
+                      onSignOut={() => { setShowProfile(false); onSignOut?.(); }}
+                    />
                   </motion.div>
                 </>
               )}
@@ -376,73 +242,6 @@ export default function Home({
 
       {/* Summary panel — voice-first, no live transcript */}
       <SummaryPanel messages={messages} />
-
-      {/* Calendar connect banner */}
-      <AnimatePresence>
-        {calendarBanner && (
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: 20 }}
-            transition={{ duration: 0.25 }}
-            style={{
-              position: 'fixed',
-              bottom: 56,
-              left: '50%',
-              transform: 'translateX(-50%)',
-              zIndex: 50,
-              display: 'flex',
-              alignItems: 'center',
-              gap: 12,
-              backgroundColor: 'rgba(255,255,255,0.95)',
-              backdropFilter: 'blur(16px)',
-              WebkitBackdropFilter: 'blur(16px)',
-              border: '1px solid rgba(0,0,0,0.08)',
-              borderRadius: 14,
-              padding: '10px 14px',
-              boxShadow: '0 4px 24px rgba(0,0,0,0.15)',
-              maxWidth: 360,
-              width: 'calc(100vw - 80px)',
-            }}
-          >
-            <svg width="18" height="18" viewBox="0 0 18 18" fill="none" style={{ flexShrink: 0 }}>
-              <rect x="2" y="2" width="14" height="14" rx="2.5" fill="#0A84FF" opacity="0.15"/>
-              <path d="M6 2V4.5M12 2V4.5M2 7H16" stroke="#0A84FF" strokeWidth="1.5" strokeLinecap="round"/>
-              <circle cx="9" cy="12" r="2" fill="#0A84FF" opacity="0.7"/>
-            </svg>
-            <span style={{
-              flex: 1, fontSize: 13, lineHeight: 1.4,
-              color: '#222', fontFamily: "'Inter', system-ui, sans-serif",
-            }}>
-              Connect your calendar to automatically track your events.
-            </span>
-            <button
-              onClick={openCalendarPanel}
-              style={{
-                flexShrink: 0, fontSize: 12, fontWeight: 600,
-                fontFamily: "'Inter', system-ui, sans-serif",
-                color: '#0A84FF', background: 'none', border: 'none',
-                cursor: 'pointer', padding: 0, whiteSpace: 'nowrap',
-              }}
-            >
-              Connect
-            </button>
-            <button
-              onClick={() => { setCalendarBanner(false); bannerDismissedRef.current = true; }}
-              style={{
-                flexShrink: 0, background: 'none', border: 'none', cursor: 'pointer',
-                color: '#bbb', padding: 0, display: 'flex', alignItems: 'center',
-              }}
-              onMouseEnter={e => ((e.currentTarget as HTMLButtonElement).style.color = '#666')}
-              onMouseLeave={e => ((e.currentTarget as HTMLButtonElement).style.color = '#bbb')}
-            >
-              <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
-                <path d="M2 2L10 10M10 2L2 10" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/>
-              </svg>
-            </button>
-          </motion.div>
-        )}
-      </AnimatePresence>
 
       {/* Footer hint */}
       <footer className="fixed bottom-0 right-0 pb-5 pr-8 z-50 pointer-events-none">
@@ -572,20 +371,15 @@ function SummaryPanel({ messages }: { messages: ChatMessage[] }) {
 // ── Profile panel — main view ────────────────────────────────────────────────
 function ProfileMain({
   firstName,
-  connected,
   nudges,
-  onOpenCalendar,
   onDismissNudge,
   onSignOut,
 }: {
   firstName: string;
-  connected: Record<string, boolean>;
   nudges: Array<{ id: number; text: string; dueAt: string | null }>;
-  onOpenCalendar: () => void;
   onDismissNudge: (id: number) => void;
   onSignOut: () => void;
 }) {
-  const connectedCount = Object.values(connected).filter(Boolean).length;
   const [hoveredNudge, setHoveredNudge] = useState<number | null>(null);
 
   return (
@@ -679,46 +473,6 @@ function ProfileMain({
         </div>
       )}
 
-      {/* Connected services row */}
-      <button
-        onClick={onOpenCalendar}
-        style={{
-          width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between",
-          padding: "11px 16px", background: "none", border: "none", cursor: "pointer",
-          borderBottom: "1px solid #f0f0f0",
-        }}
-        onMouseEnter={e => (e.currentTarget.style.backgroundColor = "#f8f8f8")}
-        onMouseLeave={e => (e.currentTarget.style.backgroundColor = "transparent")}
-      >
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-            <rect x="1.5" y="2" width="13" height="12" rx="2" stroke="#888" strokeWidth="1.3"/>
-            <path d="M5 1V3.5M11 1V3.5M1.5 6H14.5" stroke="#888" strokeWidth="1.3" strokeLinecap="round"/>
-          </svg>
-          <span style={{ fontSize: 13, color: "#333", fontFamily: "'Inter', system-ui, sans-serif" }}>
-            Connected services
-          </span>
-        </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-          {connectedCount > 0 ? (
-            <span style={{
-              fontSize: 11, color: "#fff", backgroundColor: "#0A84FF",
-              borderRadius: 10, padding: "1px 7px",
-              fontFamily: "'Inter', system-ui, sans-serif",
-            }}>
-              {connectedCount} connected
-            </span>
-          ) : (
-            <span style={{ fontSize: 11, color: "#0A84FF", fontFamily: "'Inter', system-ui, sans-serif" }}>
-              Connect
-            </span>
-          )}
-          <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
-            <path d="M3 2L7 5L3 8" stroke="#bbb" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
-          </svg>
-        </div>
-      </button>
-
       {/* Sign out */}
       <button
         onClick={onSignOut}
@@ -736,116 +490,3 @@ function ProfileMain({
   );
 }
 
-// ── Profile panel — calendar section ────────────────────────────────────────
-function CalendarSection({
-  connected,
-  connecting,
-  loading,
-  onConnect,
-  onDisconnect,
-  onBack,
-}: {
-  connected: Record<string, boolean>;
-  connecting: string | null;
-  loading?: boolean;
-  onConnect: (id: string) => void;
-  onDisconnect: (id: string) => void;
-  onBack: () => void;
-}) {
-  return (
-    <div>
-      {/* Header */}
-      <div style={{
-        display: "flex", alignItems: "center", gap: 8,
-        padding: "12px 16px", borderBottom: "1px solid #f0f0f0",
-      }}>
-        <button
-          onClick={onBack}
-          style={{
-            background: "none", border: "none", cursor: "pointer",
-            padding: 4, display: "flex", alignItems: "center",
-            color: "#aaa", borderRadius: 4,
-          }}
-          onMouseEnter={e => ((e.currentTarget as HTMLButtonElement).style.color = "#333")}
-          onMouseLeave={e => ((e.currentTarget as HTMLButtonElement).style.color = "#aaa")}
-        >
-          <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-            <path d="M9 2L4 7L9 12" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-          </svg>
-        </button>
-        <span style={{ fontSize: 13, fontWeight: 600, color: "#111", fontFamily: "'Inter', system-ui, sans-serif" }}>
-          Connected services
-        </span>
-      </div>
-
-      {/* Services */}
-      <div style={{ padding: "8px 0" }}>
-        {loading && (
-          <p style={{ margin: "8px 16px", fontSize: 12, color: "#bbb", fontFamily: "'Inter', system-ui, sans-serif" }}>
-            Checking connection status…
-          </p>
-        )}
-        {CALENDAR_SERVICES.map(svc => {
-          const isConnected = connected[svc.id];
-          const isConnecting = connecting === svc.id;
-          return (
-            <div
-              key={svc.id}
-              style={{
-                display: "flex", alignItems: "center", justifyContent: "space-between",
-                padding: "10px 16px",
-              }}
-            >
-              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                {svc.icon}
-                <div>
-                  <p style={{ margin: 0, fontSize: 13, color: "#222", fontFamily: "'Inter', system-ui, sans-serif", fontWeight: 500 }}>
-                    {svc.label}
-                  </p>
-                  <p style={{ margin: 0, fontSize: 11, color: isConnected ? "#22c55e" : "#aaa", fontFamily: "'Inter', system-ui, sans-serif" }}>
-                    {isConnected ? "Connected" : "Not connected"}
-                  </p>
-                </div>
-              </div>
-              <button
-                onClick={() => isConnected ? onDisconnect(svc.id) : onConnect(svc.id)}
-                disabled={isConnecting}
-                style={{
-                  fontSize: 12, fontWeight: 600,
-                  fontFamily: "'Inter', system-ui, sans-serif",
-                  padding: "5px 12px",
-                  borderRadius: 9999,
-                  border: isConnected ? "1.5px solid #e0e0e0" : "none",
-                  cursor: isConnecting ? "wait" : "pointer",
-                  color: isConnected ? "#888" : "#fff",
-                  backgroundColor: isConnecting ? "#bbb" : isConnected ? "transparent" : "#0A84FF",
-                  transition: "all 0.15s",
-                }}
-                onMouseEnter={e => {
-                  if (!isConnecting && !isConnected)
-                    (e.currentTarget as HTMLButtonElement).style.backgroundColor = "#0071EB";
-                }}
-                onMouseLeave={e => {
-                  if (!isConnecting && !isConnected)
-                    (e.currentTarget as HTMLButtonElement).style.backgroundColor = "#0A84FF";
-                }}
-              >
-                {isConnecting ? "Connecting…" : isConnected ? "Disconnect" : "Connect"}
-              </button>
-            </div>
-          );
-        })}
-      </div>
-
-      {/* Note */}
-      <div style={{ padding: "0 16px 14px" }}>
-        <p style={{
-          margin: 0, fontSize: 11, color: "#bbb", lineHeight: 1.5,
-          fontFamily: "'Inter', system-ui, sans-serif",
-        }}>
-          Once connected, Lucy can reference your events and remind you of upcoming appointments naturally in conversation.
-        </p>
-      </div>
-    </div>
-  );
-}

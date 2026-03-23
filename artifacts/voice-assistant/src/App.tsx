@@ -278,9 +278,7 @@ function AppContent() {
             onNew={handleNewConversation}
             onDelete={handleDeleteConv}
             onRename={handleRenameConv}
-            onAddMemory={handleAddMemory}
             onDeleteMemory={handleDeleteMemory}
-            onAddNudge={handleAddNudge}
             onDismissNudge={handleDismissNudge}
             onClose={() => setSidebarOpen(false)}
           />
