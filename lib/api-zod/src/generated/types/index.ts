@@ -6,4 +6,16 @@
  * OpenAPI spec version: 0.1.0
  */
 
+export * from "./assistantContext";
+export * from "./calendarEvent";
+export * from "./createOpenaiConversationBody";
 export * from "./healthStatus";
+export * from "./openaiConversation";
+export * from "./openaiConversationWithMessages";
+export * from "./openaiError";
+export * from "./openaiMessage";
+export * from "./proactiveGreetingBody";
+export * from "./sendOpenaiMessageBody";
+export * from "./sendOpenaiVoiceMessageBody";
+export * from "./task";
+export * from "./taskPriority";

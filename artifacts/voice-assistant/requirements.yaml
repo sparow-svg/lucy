@@ -1,0 +1,9 @@
+packages:
+  "framer-motion": "For complex spring physics animations and state transitions of the Orb"
+  "clsx": "Utility for constructing className strings conditionally"
+  "tailwind-merge": "Utility to safely merge Tailwind CSS classes"
+  "date-fns": "For elegant date and time formatting in the assistant context"
+
+notes:
+  - Custom robust SSE parsing and AudioContext queue implemented to avoid dependency on opaque integration hook signatures.
+  - Using pure white ultra-minimalist design per requirements.

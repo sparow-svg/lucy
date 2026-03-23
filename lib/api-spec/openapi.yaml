@@ -1,6 +1,5 @@
 openapi: 3.1.0
 info:
-  # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
   description: API specification
@@ -10,6 +9,10 @@ servers:
 tags:
   - name: health
     description: Health operations
+  - name: openai
+    description: OpenAI AI chat, image, and audio operations
+  - name: assistant
+    description: Voice AI assistant context operations
 paths:
   /healthz:
     get:
@@ -24,6 +27,171 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+  /assistant/context:
+    get:
+      operationId: getAssistantContext
+      tags: [assistant]
+      summary: Get user context (calendar events and tasks)
+      responses:
+        "200":
+          description: User context data
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssistantContext"
+  /openai/conversations:
+    get:
+      operationId: listOpenaiConversations
+      tags: [openai]
+      summary: List all conversations
+      responses:
+        "200":
+          description: List of conversations
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/OpenaiConversation"
+    post:
+      operationId: createOpenaiConversation
+      tags: [openai]
+      summary: Create a new conversation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateOpenaiConversationBody"
+      responses:
+        "201":
+          description: Created conversation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OpenaiConversation"
+  /openai/conversations/{id}:
+    get:
+      operationId: getOpenaiConversation
+      tags: [openai]
+      summary: Get conversation with messages
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Conversation with messages
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OpenaiConversationWithMessages"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OpenaiError"
+    delete:
+      operationId: deleteOpenaiConversation
+      tags: [openai]
+      summary: Delete a conversation
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Deleted
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OpenaiError"
+  /openai/conversations/{id}/messages:
+    get:
+      operationId: listOpenaiMessages
+      tags: [openai]
+      summary: List messages in a conversation
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: List of messages
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/OpenaiMessage"
+    post:
+      operationId: sendOpenaiMessage
+      tags: [openai]
+      summary: Send a text message and receive a streaming text response
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SendOpenaiMessageBody"
+      responses:
+        "200":
+          description: SSE stream of assistant text chunks
+          content:
+            text/event-stream: {}
+  /openai/conversations/{id}/voice-messages:
+    post:
+      operationId: sendOpenaiVoiceMessage
+      tags: [openai]
+      summary: Send audio and receive a streaming voice response
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SendOpenaiVoiceMessageBody"
+      responses:
+        "200":
+          description: SSE stream of transcript and audio chunks
+          content:
+            text/event-stream: {}
+  /openai/proactive-greeting:
+    post:
+      operationId: getProactiveGreeting
+      tags: [openai]
+      summary: Generate a proactive greeting based on user context
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProactiveGreetingBody"
+      responses:
+        "200":
+          description: SSE stream of greeting audio
+          content:
+            text/event-stream: {}
 components:
   schemas:
     HealthStatus:
@@ -33,4 +201,153 @@ components:
           type: string
       required:
         - status
-
+    CalendarEvent:
+      type: object
+      properties:
+        id:
+          type: string
+        title:
+          type: string
+        time:
+          type: string
+        duration:
+          type: string
+        location:
+          type: string
+        attendees:
+          type: array
+          items:
+            type: string
+      required:
+        - id
+        - title
+        - time
+        - duration
+    Task:
+      type: object
+      properties:
+        id:
+          type: string
+        title:
+          type: string
+        priority:
+          type: string
+          enum: [high, medium, low]
+        due:
+          type: string
+        completed:
+          type: boolean
+      required:
+        - id
+        - title
+        - priority
+        - completed
+    AssistantContext:
+      type: object
+      properties:
+        userName:
+          type: string
+        events:
+          type: array
+          items:
+            $ref: "#/components/schemas/CalendarEvent"
+        tasks:
+          type: array
+          items:
+            $ref: "#/components/schemas/Task"
+        currentTime:
+          type: string
+      required:
+        - userName
+        - events
+        - tasks
+        - currentTime
+    ProactiveGreetingBody:
+      type: object
+      properties:
+        context:
+          type: string
+      required:
+        - context
+    OpenaiConversation:
+      type: object
+      properties:
+        id:
+          type: integer
+        title:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - title
+        - createdAt
+    OpenaiMessage:
+      type: object
+      properties:
+        id:
+          type: integer
+        conversationId:
+          type: integer
+        role:
+          type: string
+        content:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - conversationId
+        - role
+        - content
+        - createdAt
+    CreateOpenaiConversationBody:
+      type: object
+      properties:
+        title:
+          type: string
+      required:
+        - title
+    SendOpenaiMessageBody:
+      type: object
+      properties:
+        content:
+          type: string
+      required:
+        - content
+    SendOpenaiVoiceMessageBody:
+      type: object
+      properties:
+        audio:
+          type: string
+          description: Base64-encoded audio data
+      required:
+        - audio
+    OpenaiConversationWithMessages:
+      type: object
+      properties:
+        id:
+          type: integer
+        title:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        messages:
+          type: array
+          items:
+            $ref: "#/components/schemas/OpenaiMessage"
+      required:
+        - id
+        - title
+        - createdAt
+        - messages
+    OpenaiError:
+      type: object
+      properties:
+        error:
+          type: string
+      required:
+        - error
