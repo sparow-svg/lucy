@@ -15,7 +15,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '24'  # updated to Node 24 to avoid deprecated Node 20 warning
+          node-version: '24'
 
       - name: Install dependencies
         working-directory: desktop
@@ -39,7 +39,7 @@ jobs:
         with:
           files: desktop/dist/*.dmg
           generate_release_notes: true
-          token: ${{ secrets.GH_TOKEN }}  # <<-- USE YOUR PERSONAL TOKEN HERE
+          token: ${{ secrets.GH_TOKEN }}
 
   build-win:
     runs-on: windows-latest
@@ -73,4 +73,4 @@ jobs:
         with:
           files: desktop/dist/*.exe
           generate_release_notes: true
-          token: ${{ secrets.GH_TOKEN }}  # <<-- USE YOUR PERSONAL TOKEN HERE
+          token: ${{ secrets.GH_TOKEN }}
