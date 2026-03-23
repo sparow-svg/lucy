@@ -22,34 +22,30 @@ router.post("/", async (req, res) => {
 
 Alex's context for today: ${context}
 
-Give your opening greeting. Be specific about ONE thing — ideally the Sequoia call at 2:00 PM or whatever is most time-sensitive. Something like: "Hey! I see that Sequoia call at 2:00. Want to bounce some ideas around before then?" — that energy, that specificity, that brevity. One or two sentences. Go.`;
+Open with your first greeting. Be specific about the most time-sensitive thing — like the Sequoia call at 2:00 PM. Example energy: "Hey! I see that Sequoia call at 2:00. Want to bounce some ideas around before then?" One or two sentences max. Warm, casual, like you've been in the room.`;
 
-    const textRes = await openai.chat.completions.create({
-      model: "gpt-5-mini",
-      messages: [
-        { role: "user", content: greetingPrompt },
-      ],
-    });
-
-    const greetingText = textRes.choices[0]?.message?.content ?? "Hey, I'm here. What are we working on?";
-
-    res.write(`data: ${JSON.stringify({ type: "transcript", data: greetingText })}\n\n`);
-
-    const ttsStream = await openai.chat.completions.create({
+    // Single gpt-audio call — text + audio in one stream (no two-step bottleneck)
+    const stream = await openai.chat.completions.create({
       model: "gpt-audio",
       modalities: ["text", "audio"],
       audio: { voice: "nova", format: "pcm16" },
       messages: [
-        {
-          role: "user",
-          content: `Say this naturally, like you're talking to a friend — warm and unhurried: "${greetingText}"`,
-        },
+        { role: "system", content: greetingPrompt },
+        { role: "user", content: "Hey Lucy" },
       ],
       stream: true,
     });
 
-    for await (const chunk of ttsStream) {
+    let transcriptBuffer = "";
+
+    for await (const chunk of stream) {
       const delta = chunk.choices?.[0]?.delta as any;
+
+      if (delta?.audio?.transcript) {
+        transcriptBuffer += delta.audio.transcript;
+        res.write(`data: ${JSON.stringify({ type: "transcript", data: delta.audio.transcript })}\n\n`);
+      }
+
       if (delta?.audio?.data) {
         res.write(`data: ${JSON.stringify({ type: "audio", data: delta.audio.data })}\n\n`);
       }

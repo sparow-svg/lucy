@@ -1,0 +1,39 @@
+Refine Lucy’s MVP to feel fully alive, natural, and voice-first. Implement the following improvements:
+
+1. **Activation & Flow**
+- Remove the "Start" button entirely.
+- Implement wake-word detection: Lucy should activate whenever she hears her name.
+- User speaks naturally; Lucy responds immediately without noticeable delay.
+
+2. **Latency & Audio**
+- Pre-buffer audio for faster response; target <300ms perceived latency.
+- Allow partial phrase processing so Lucy can start thinking mid-sentence.
+- Maintain natural prosody: variable pitch, intonation, brief micro-pauses, and occasional fillers like “hmm”, “okay”, “right”.
+
+3. **Orb Visuals**
+- Make orb a living 3D sphere with a blue → cyan → indigo gradient.
+- Subtle breathing when idle; expand/contract smoothly with user voice amplitude and cadence.
+- Distinct states: dormant (soft gray), listening (sky blue), thinking (indigo ripple), speaking (violet wave rings).
+- Use liquid spring physics for fluid, organic motion; avoid sharp jumps.
+
+4. **Interaction & Personality**
+- Lucy speaks concisely, like a warm, attentive colleague.
+- References recent context from the session (previous user statements, tasks, or environmental cues).
+- Does not use generic AI phrases like “How can I assist you today?”
+- Adds light human fillers and slight pauses for realism.
+- Reacts intelligently to user silence or background noise (optional subtle prompts or visual cues).
+
+5. **Session Awareness**
+- Keep lightweight memory of the current conversation.
+- Adjust behavior if user pauses, speaks over Lucy, or background noise changes.
+
+6. **Optional Enhancements**
+- Subtle visual cues for active listening (orb intensity or ripple speed).
+- Maintain immersive, minimal UI: white background, no borders, “LUCY” logo top-left, orb center-stage.
+
+Deliverables:
+- Update both frontend and backend to integrate all above features.
+- Ensure all animations, voice output, and wake-word detection work in real-time.
+- Keep code clean, commented, and modular for easy tweaks.
+
+Goal: Lucy should feel like a **human colleague/friend/founder-like presence** — responsive, attentive, and alive — not a generic chatbot.

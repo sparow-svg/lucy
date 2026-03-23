@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { AudioQueue } from "@/lib/audio-queue";
 import { useGetAssistantContext } from "@/hooks/use-queries";
 
@@ -10,25 +10,33 @@ export interface ChatMessage {
   content: string;
 }
 
+const SILENCE_THRESHOLD = 0.013;
 const SILENCE_TIMEOUT_MS = 400;
-const SILENCE_THRESHOLD = 0.012;
 
 export function useAssistant() {
   const [state, setState] = useState<AssistantState>('dormant');
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [conversationId, setConversationId] = useState<number | null>(null);
   const [isSessionActive, setIsSessionActive] = useState(false);
+  const [micVolume, setMicVolume] = useState(0);
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const audioQueueRef = useRef<AudioQueue>(new AudioQueue());
-  const analyserRef = useRef<AnalyserNode | null>(null);
-  const silenceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const volumeFrameRef = useRef<number | null>(null);
+  const silenceStartRef = useRef<number | null>(null);
+  const recognitionRef = useRef<SpeechRecognition | null>(null);
+  const sessionActiveRef = useRef(false);
+  const stateRef = useRef<AssistantState>('dormant');
+  const convIdRef = useRef<number | null>(null);
 
   const { data: contextData } = useGetAssistantContext({
     query: { retry: false, refetchOnWindowFocus: false }
   });
+
+  // Keep refs in sync so callbacks don't capture stale state
+  useEffect(() => { stateRef.current = state; }, [state]);
+  useEffect(() => { convIdRef.current = conversationId; }, [conversationId]);
 
   const parseSSE = async (
     response: Response,
@@ -53,10 +61,8 @@ export function useAssistant() {
         for (const block of lines) {
           const dataLine = block.split('\n').find(l => l.startsWith('data: '));
           if (!dataLine) continue;
-
           const dataStr = dataLine.slice(6);
           if (dataStr === '[DONE]') continue;
-
           try {
             const parsed = JSON.parse(dataStr);
             if (parsed.type === 'transcript' || parsed.content) {
@@ -66,9 +72,7 @@ export function useAssistant() {
             } else if (parsed.done) {
               onDone();
             }
-          } catch {
-            // ignore malformed chunk
-          }
+          } catch { /* ignore */ }
         }
       }
     } finally {
@@ -76,123 +80,129 @@ export function useAssistant() {
     }
   };
 
-  // Monitor when speaking finishes
+  // Poll speaking end
   useEffect(() => {
     const interval = setInterval(() => {
-      if (state === 'speaking' && !audioQueueRef.current.isCurrentlyPlaying) {
+      if (stateRef.current === 'speaking' && !audioQueueRef.current.isCurrentlyPlaying) {
         setState('idle');
+        // Auto-restart listening after Lucy speaks
+        if (sessionActiveRef.current) {
+          setTimeout(() => startRecording(), 150);
+        }
       }
     }, 200);
     return () => clearInterval(interval);
-  }, [state]);
+  }, []);
 
-  const triggerGreeting = async (convId: number) => {
+  // Pre-create conversation on mount for lower latency
+  useEffect(() => {
+    const init = async () => {
+      try {
+        const res = await fetch('/api/openai/conversations', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ title: 'Lucy Session' })
+        });
+        if (res.ok) {
+          const conv = await res.json();
+          setConversationId(conv.id);
+          convIdRef.current = conv.id;
+        }
+      } catch { /* silent */ }
+    };
+    init();
+  }, []);
+
+  const triggerGreeting = useCallback(async () => {
     if (!contextData) return;
+    const convId = convIdRef.current;
+    if (!convId) return;
+
     try {
+      setState('thinking');
       const res = await fetch('/api/openai/proactive-greeting', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ context: JSON.stringify(contextData) })
       });
-
       if (!res.ok) throw new Error('Greeting failed');
 
       setState('speaking');
-      let accumulatedText = "";
+      let accumulated = "";
       const msgId = crypto.randomUUID();
       setMessages([{ id: msgId, role: 'assistant', content: '' }]);
 
       await parseSSE(res,
         (text) => {
-          accumulatedText += text;
-          setMessages(prev => prev.map(m => m.id === msgId ? { ...m, content: accumulatedText } : m));
+          accumulated += text;
+          setMessages(prev => prev.map(m => m.id === msgId ? { ...m, content: accumulated } : m));
         },
         (audio) => audioQueueRef.current.playChunk(audio),
-        () => setState('idle')
+        () => { /* handled by poll */ }
       );
     } catch {
       setState('idle');
     }
-  };
+  }, [contextData]);
 
-  const startSession = async () => {
-    if (isSessionActive) return;
-    setIsSessionActive(true);
+  // Wake-word detection via SpeechRecognition
+  const startWakeWordDetection = useCallback(() => {
+    const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SR) return;
 
-    try {
-      setState('thinking');
+    const recognition: SpeechRecognition = new SR();
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    recognition.lang = 'en-US';
+    recognitionRef.current = recognition;
 
-      const convRes = await fetch('/api/openai/conversations', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title: 'Lucy Session' })
-      });
-      if (!convRes.ok) throw new Error('Could not create conversation');
-      const conv = await convRes.json();
-      setConversationId(conv.id);
+    recognition.onresult = (event: SpeechRecognitionEvent) => {
+      if (sessionActiveRef.current) return;
 
-      await triggerGreeting(conv.id);
-    } catch {
-      setState('idle');
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        const transcript = event.results[i][0].transcript.toLowerCase();
+        if (transcript.includes('lucy') || transcript.includes('luci')) {
+          sessionActiveRef.current = true;
+          setIsSessionActive(true);
+          recognition.stop();
+          triggerGreeting();
+          break;
+        }
+      }
+    };
+
+    recognition.onend = () => {
+      // Restart if session not yet active
+      if (!sessionActiveRef.current) {
+        try { recognition.start(); } catch { /* already running */ }
+      }
+    };
+
+    try { recognition.start(); } catch { /* already running */ }
+  }, [triggerGreeting]);
+
+  // Start wake-word once context is ready
+  useEffect(() => {
+    if (contextData && !isSessionActive) {
+      setState('dormant');
+      startWakeWordDetection();
     }
-  };
+  }, [contextData, isSessionActive, startWakeWordDetection]);
 
-  const stopSilenceDetection = () => {
-    if (silenceTimerRef.current) {
-      clearTimeout(silenceTimerRef.current);
-      silenceTimerRef.current = null;
-    }
+  const stopVolumeMonitor = () => {
     if (volumeFrameRef.current) {
       cancelAnimationFrame(volumeFrameRef.current);
       volumeFrameRef.current = null;
     }
+    silenceStartRef.current = null;
+    setMicVolume(0);
   };
 
-  const startSilenceDetection = (stream: MediaStream, onSilence: () => void) => {
-    const audioCtx = new AudioContext();
-    const source = audioCtx.createMediaStreamSource(stream);
-    const analyser = audioCtx.createAnalyser();
-    analyser.fftSize = 256;
-    analyser.smoothingTimeConstant = 0.8;
-    source.connect(analyser);
-    analyserRef.current = analyser;
+  const startRecording = useCallback(async () => {
+    if (stateRef.current === 'thinking' || stateRef.current === 'speaking') return;
 
-    const dataArray = new Uint8Array(analyser.frequencyBinCount);
-
-    let silenceStart: number | null = null;
-
-    const check = () => {
-      analyser.getByteTimeDomainData(dataArray);
-      let sum = 0;
-      for (let i = 0; i < dataArray.length; i++) {
-        const v = (dataArray[i] - 128) / 128;
-        sum += v * v;
-      }
-      const rms = Math.sqrt(sum / dataArray.length);
-
-      if (rms < SILENCE_THRESHOLD) {
-        if (silenceStart === null) {
-          silenceStart = Date.now();
-        } else if (Date.now() - silenceStart > SILENCE_TIMEOUT_MS) {
-          stopSilenceDetection();
-          audioCtx.close();
-          onSilence();
-          return;
-        }
-      } else {
-        silenceStart = null;
-      }
-
-      volumeFrameRef.current = requestAnimationFrame(check);
-    };
-
-    volumeFrameRef.current = requestAnimationFrame(check);
-  };
-
-  const startRecording = async () => {
     try {
-      // Barge-in: immediately stop Lucy's audio
-      if (state === 'speaking') {
+      if (stateRef.current === 'speaking') {
         audioQueueRef.current.stop();
       }
 
@@ -201,12 +211,50 @@ export function useAssistant() {
       mediaRecorderRef.current = recorder;
       audioChunksRef.current = [];
 
+      // Audio context for volume + silence detection
+      const audioCtx = new AudioContext();
+      const source = audioCtx.createMediaStreamSource(stream);
+      const analyser = audioCtx.createAnalyser();
+      analyser.fftSize = 128;
+      analyser.smoothingTimeConstant = 0.82;
+      source.connect(analyser);
+      const dataArr = new Uint8Array(analyser.frequencyBinCount);
+
+      const checkVolume = () => {
+        analyser.getByteTimeDomainData(dataArr);
+        let sum = 0;
+        for (let i = 0; i < dataArr.length; i++) {
+          const v = (dataArr[i] - 128) / 128;
+          sum += v * v;
+        }
+        const rms = Math.sqrt(sum / dataArr.length);
+        setMicVolume(Math.min(1, rms * 7));
+
+        if (rms < SILENCE_THRESHOLD) {
+          if (silenceStartRef.current === null) {
+            silenceStartRef.current = Date.now();
+          } else if (Date.now() - silenceStartRef.current > SILENCE_TIMEOUT_MS) {
+            stopVolumeMonitor();
+            audioCtx.close();
+            if (mediaRecorderRef.current?.state === 'recording') {
+              mediaRecorderRef.current.stop();
+            }
+            return;
+          }
+        } else {
+          silenceStartRef.current = null;
+        }
+
+        volumeFrameRef.current = requestAnimationFrame(checkVolume);
+      };
+
       recorder.ondataavailable = (e) => {
         if (e.data.size > 0) audioChunksRef.current.push(e.data);
       };
 
       recorder.onstop = async () => {
-        stopSilenceDetection();
+        stopVolumeMonitor();
+        audioCtx.close().catch(() => {});
         const blob = new Blob(audioChunksRef.current, { type: recorder.mimeType });
         stream.getTracks().forEach(t => t.stop());
         await processVoiceInput(blob);
@@ -214,35 +262,21 @@ export function useAssistant() {
 
       recorder.start();
       setState('listening');
-
-      // Start silence detection for auto-stop
-      startSilenceDetection(stream, () => {
-        if (mediaRecorderRef.current?.state === 'recording') {
-          mediaRecorderRef.current.stop();
-          setState('thinking');
-        }
-      });
+      silenceStartRef.current = null;
+      volumeFrameRef.current = requestAnimationFrame(checkVolume);
 
     } catch {
       setState('idle');
     }
-  };
+  }, []);
 
-  const stopRecording = () => {
-    stopSilenceDetection();
-    if (mediaRecorderRef.current?.state === 'recording') {
-      mediaRecorderRef.current.stop();
-      setState('thinking');
-    }
-  };
-
-  const processVoiceInput = async (blob: Blob) => {
-    if (!conversationId) {
-      setState('idle');
-      return;
-    }
+  const processVoiceInput = useCallback(async (blob: Blob) => {
+    const convId = convIdRef.current;
+    if (!convId) { setState('idle'); return; }
 
     try {
+      setState('thinking');
+
       const base64Audio = await new Promise<string>((resolve, reject) => {
         const reader = new FileReader();
         reader.readAsDataURL(blob);
@@ -250,7 +284,7 @@ export function useAssistant() {
         reader.onerror = reject;
       });
 
-      const res = await fetch(`/api/openai/conversations/${conversationId}/voice-messages`, {
+      const res = await fetch(`/api/openai/conversations/${convId}/voice-messages`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ audio: base64Audio })
@@ -259,37 +293,43 @@ export function useAssistant() {
       if (!res.ok) throw new Error('Voice failed');
 
       setState('speaking');
-      let accumulatedText = "";
+      let accumulated = "";
       const msgId = crypto.randomUUID();
       setMessages(prev => [...prev, { id: msgId, role: 'assistant', content: '' }]);
 
       await parseSSE(res,
         (text) => {
-          accumulatedText += text;
-          setMessages(prev => prev.map(m => m.id === msgId ? { ...m, content: accumulatedText } : m));
+          accumulated += text;
+          setMessages(prev => prev.map(m => m.id === msgId ? { ...m, content: accumulated } : m));
         },
         (audio) => audioQueueRef.current.playChunk(audio),
-        () => setState('idle')
+        () => { /* handled by poll */ }
       );
     } catch {
       setState('idle');
     }
-  };
+  }, []);
 
-  const toggleRecording = () => {
+  const toggleRecording = useCallback(() => {
     if (!isSessionActive) return;
-    if (state === 'listening') {
-      stopRecording();
-    } else if (state === 'idle' || state === 'speaking') {
+    const s = stateRef.current;
+    if (s === 'listening') {
+      stopVolumeMonitor();
+      if (mediaRecorderRef.current?.state === 'recording') {
+        mediaRecorderRef.current.stop();
+        setState('thinking');
+      }
+    } else if (s === 'idle' || s === 'speaking') {
+      if (s === 'speaking') audioQueueRef.current.stop();
       startRecording();
     }
-  };
+  }, [isSessionActive, startRecording]);
 
   return {
     state,
     messages,
     isSessionActive,
-    startSession,
+    micVolume,
     toggleRecording,
   };
 }
