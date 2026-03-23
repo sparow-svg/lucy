@@ -1,10 +1,7 @@
-import { memo } from "react";
 import { useAssistant } from "@/hooks/use-assistant";
 import { Orb } from "@/components/Orb";
 import { Transcript } from "@/components/Transcript";
 import { motion, AnimatePresence } from "framer-motion";
-
-const MemoTranscript = memo(Transcript);
 
 export default function Home() {
   const { state, messages, micVolume, isSessionActive, toggleRecording } = useAssistant();
@@ -96,7 +93,7 @@ export default function Home() {
           </AnimatePresence>
         </div>
 
-        <MemoTranscript messages={messages} />
+        <Transcript messages={messages} />
       </main>
 
       {/* Footer */}
