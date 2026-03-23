@@ -139,7 +139,7 @@ export default function Home() {
       {/* Main stage — orb sits precisely on the pupil */}
       <main
         className="relative flex-1 flex flex-col items-center justify-center"
-        style={{ zIndex: 10, paddingTop: 64 }}
+        style={{ zIndex: 10 }}
       >
         <Orb
           state={state}

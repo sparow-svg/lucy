@@ -42,7 +42,7 @@ const PAL: Record<AssistantState, {
   },
 };
 
-const SIZE = 160;
+const SIZE = 80;
 
 export const Orb = memo(function Orb({
   state, onClick, isSessionActive, micVolume = 0,
