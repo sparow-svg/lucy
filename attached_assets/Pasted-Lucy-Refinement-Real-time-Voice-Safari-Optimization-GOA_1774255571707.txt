@@ -1,0 +1,63 @@
+Lucy Refinement — Real-time Voice + Safari Optimization
+
+GOAL:
+Make Lucy fluent, always-on, human-like, and Safari-safe. Address latency, repeated greetings, crashes, and orb interaction behavior.
+
+---
+
+1. Wake-word Activation:
+- Remove the Start button completely.
+- Lucy activates only when the wake-word “Lucy” is detected.
+- Use lightweight local wake-word detection to reduce CPU/memory usage.
+- Do not start full TTS or model streaming until wake-word triggers.
+
+2. Greetings / Session Memory:
+- First greeting happens once per session, contextual (reference time of day, calendar, user info).
+- Remove all generic assistant phrases like “How can I assist you today?”
+- After the first greeting, Lucy responds only to user speech, never auto-greeting again.
+- Keep a lightweight session memory to track that the greeting has already occurred and current conversation context.
+
+3. Barge-in / Real-time Audio:
+- Continuously monitor user microphone while Lucy speaks.
+- If user starts talking:
+    - Immediately cancel current TTS playback.
+    - Start processing user input instantly (partial streaming accepted).
+- Resume AI output only after user stops speaking.
+
+4. Audio Optimization:
+- Only one TTS audio stream at a time; cancel redundant streams.
+- Use partial streaming to reduce latency.
+- Pre-buffer audio for faster perceived responsiveness (<300ms if possible).
+
+5. Orb / Visual Feedback:
+- Orb remains **black gradient/textured by default** (dormant).
+- When Lucy is **listening, thinking, or speaking**, orb interacts into **Apple-like blue**.
+- Implement subtle “breathing” motion when idle.
+- Use liquid spring physics, smooth scaling, and reactive amplitude.
+- Limit frame updates to 50–100ms intervals to reduce CPU load on Safari.
+- Simplify visual effects on Safari if needed: reduce blur/shadows, GPU-friendly transforms only.
+
+6. React / DOM Optimization:
+- Memoize orb and audio components to prevent unnecessary re-renders.
+- Keep transcript in memory, only render the latest few lines.
+- Avoid large DOM updates for every audio chunk.
+
+7. UX / Humanization:
+- Insert natural micro-pauses, fillers (“hmm”, “okay”), and prosody variation to mask any remaining latency.
+- Partial responses: start speaking before full model output is ready.
+- Ensure interruption and response feels immediate.
+
+8. Safari-Specific Stability:
+- Offload audio processing and orb physics to Web Workers.
+- Reduce DOM and visual computation load on Safari.
+- Throttle heavy updates, precompute gradients if necessary.
+
+---
+
+RESULT:
+Lucy should feel alive, human-like, responsive, and immersive.  
+- Always-on via wake-word.  
+- Fluid voice conversation with barge-in.  
+- Stable and fast even on Safari.  
+- Black orb at rest, Apple-blue orb during interactions.  
+- Minimal, calm UI with focus on the conversation.

@@ -1,74 +1,70 @@
 /**
- * A robust, generic PCM16 Audio Queue for streaming playback.
- * Avoids complex AudioWorklet issues by buffering directly in the main thread
- * using standard Web Audio API BufferSources.
+ * PCM16 Audio Queue — seamless streaming playback via Web Audio API.
+ * Safari-safe: keeps AudioContext alive, stops sources directly (no close/reopen).
  */
 export class AudioQueue {
   private ctx: AudioContext | null = null;
   private nextStartTime: number = 0;
-  private isPlaying: boolean = false;
+  private scheduledSources: AudioBufferSourceNode[] = [];
+  private _isPlaying: boolean = false;
 
-  constructor() {
-    this.initContext();
-  }
-
-  private initContext() {
-    if (!this.ctx) {
+  private getCtx(): AudioContext {
+    if (!this.ctx || this.ctx.state === 'closed') {
       this.ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
     }
+    if (this.ctx.state === 'suspended') {
+      this.ctx.resume().catch(() => {});
+    }
+    return this.ctx;
   }
 
   public async playChunk(base64PCM16: string) {
-    this.initContext();
-    if (!this.ctx) return;
-    
-    this.isPlaying = true;
+    const ctx = this.getCtx();
+    this._isPlaying = true;
 
-    // Decode base64 to binary string
     const binary = atob(base64PCM16);
-    const len = binary.length;
-    const bytes = new Uint8Array(len);
-    for (let i = 0; i < len; i++) {
-      bytes[i] = binary.charCodeAt(i);
-    }
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
 
-    // Convert Int16 to Float32
     const pcm16 = new Int16Array(bytes.buffer);
     const float32 = new Float32Array(pcm16.length);
-    for (let i = 0; i < pcm16.length; i++) {
-      float32[i] = pcm16[i] / 32768.0;
-    }
+    for (let i = 0; i < pcm16.length; i++) float32[i] = pcm16[i] / 32768.0;
 
-    // Create AudioBuffer (assumes 24kHz from OpenAI by default, adjust if needed)
     const sampleRate = 24000;
-    const buffer = this.ctx.createBuffer(1, float32.length, sampleRate);
+    const buffer = ctx.createBuffer(1, float32.length, sampleRate);
     buffer.getChannelData(0).set(float32);
 
-    const source = this.ctx.createBufferSource();
+    const source = ctx.createBufferSource();
     source.buffer = buffer;
-    source.connect(this.ctx.destination);
+    source.connect(ctx.destination);
 
-    // Schedule seamlessly
-    const currentTime = this.ctx.currentTime;
+    const currentTime = ctx.currentTime;
     if (this.nextStartTime < currentTime) {
-      this.nextStartTime = currentTime + 0.02; // slight buffer
+      this.nextStartTime = currentTime + 0.015;
     }
 
     source.start(this.nextStartTime);
     this.nextStartTime += buffer.duration;
+
+    this.scheduledSources.push(source);
+    source.onended = () => {
+      this.scheduledSources = this.scheduledSources.filter(s => s !== source);
+    };
   }
 
   public stop() {
-    if (this.ctx) {
-      this.ctx.close();
-      this.ctx = null;
+    // Stop all scheduled sources immediately — no context teardown
+    for (const source of this.scheduledSources) {
+      try { source.stop(); } catch { /* already stopped */ }
+      source.disconnect();
     }
+    this.scheduledSources = [];
     this.nextStartTime = 0;
-    this.isPlaying = false;
+    this._isPlaying = false;
   }
 
-  public get isCurrentlyPlaying() {
-    if (!this.ctx) return false;
-    return this.isPlaying && this.ctx.currentTime < this.nextStartTime;
+  public get isCurrentlyPlaying(): boolean {
+    if (!this.ctx || this.ctx.state === 'closed') return false;
+    return this._isPlaying && this.ctx.currentTime < this.nextStartTime;
   }
 }

@@ -1,27 +1,25 @@
+import { memo } from "react";
 import { useAssistant } from "@/hooks/use-assistant";
 import { Orb } from "@/components/Orb";
 import { Transcript } from "@/components/Transcript";
 import { motion, AnimatePresence } from "framer-motion";
 
+// Memoized transcript so audio chunks don't re-render the orb
+const MemoTranscript = memo(Transcript);
+
 export default function Home() {
-  const { state, messages, isSessionActive, micVolume, toggleRecording } = useAssistant();
+  const { state, messages, micVolume, isSessionActive, toggleRecording } = useAssistant();
 
-  const getStatusLabel = () => {
-    switch (state) {
-      case 'dormant': return "say \"Lucy\" to start";
-      case 'idle': return null;
-      case 'listening': return "listening";
-      case 'thinking': return "thinking";
-      case 'speaking': return null;
-    }
-  };
-
-  const label = getStatusLabel();
+  const statusLabel =
+    state === 'dormant' ? 'say "Lucy" to start' :
+    state === 'listening' ? 'listening' :
+    state === 'thinking' ? 'thinking' :
+    null;
 
   return (
     <div className="min-h-screen w-full bg-white flex flex-col relative overflow-hidden">
 
-      {/* Fixed header — no borders, no background */}
+      {/* Header — fixed, no borders, no background */}
       <header className="fixed top-0 left-0 right-0 z-50 flex items-center px-8 h-16">
         <span
           className="text-black select-none"
@@ -36,11 +34,9 @@ export default function Home() {
         </span>
       </header>
 
-      {/* Main stage — vertically and horizontally centered */}
-      <main
-        className="flex-1 flex flex-col items-center justify-center"
-        style={{ paddingTop: 64 }}
-      >
+      {/* Main stage */}
+      <main className="flex-1 flex flex-col items-center justify-center" style={{ paddingTop: 64 }}>
+
         <Orb
           state={state}
           onClick={toggleRecording}
@@ -48,34 +44,35 @@ export default function Home() {
           micVolume={micVolume}
         />
 
-        {/* Subtle status label */}
+        {/* Status label */}
         <div className="h-7 mt-4 flex items-center justify-center">
           <AnimatePresence mode="wait">
-            {label && (
+            {statusLabel && (
               <motion.span
-                key={label}
+                key={statusLabel}
                 initial={{ opacity: 0, y: 4 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -4 }}
-                transition={{ duration: 0.2 }}
+                transition={{ duration: 0.18 }}
                 className="select-none"
                 style={{
                   fontSize: 12,
                   color: '#9CA3AF',
-                  letterSpacing: '0.06em',
+                  letterSpacing: '0.05em',
                   fontFamily: "'Inter', system-ui, sans-serif",
                 }}
               >
-                {label}
+                {statusLabel}
               </motion.span>
             )}
           </AnimatePresence>
         </div>
 
-        <Transcript messages={messages} />
+        <MemoTranscript messages={messages} />
+
       </main>
 
-      {/* Footer — pure text, no borders */}
+      {/* Footer */}
       <footer className="fixed bottom-0 right-0 pb-5 pr-8 z-50 pointer-events-none">
         <span
           className="select-none"
