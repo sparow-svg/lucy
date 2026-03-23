@@ -1,6 +1,6 @@
 import { useAssistant } from "@/hooks/use-assistant";
+import type { ChatMessage } from "@/hooks/use-assistant";
 import { Orb } from "@/components/Orb";
-import { Transcript } from "@/components/Transcript";
 import { motion, AnimatePresence } from "framer-motion";
 import { useState, useEffect, useRef, useCallback } from "react";
 
@@ -346,15 +346,8 @@ export default function Home({
         </AnimatePresence>
       </div>
 
-      {/* Transcript */}
-      <div style={{
-        position: 'fixed',
-        bottom: 80, left: 0, right: 0,
-        zIndex: 20,
-        pointerEvents: 'none',
-      }}>
-        <Transcript messages={messages} />
-      </div>
+      {/* Summary panel — voice-first, no live transcript */}
+      <SummaryPanel messages={messages} />
 
       {/* Calendar connect banner */}
       <AnimatePresence>
@@ -433,6 +426,117 @@ export default function Home({
           Latency: &lt;300ms&nbsp;&nbsp;|&nbsp;&nbsp;Subscribed
         </span>
       </footer>
+    </div>
+  );
+}
+
+// ── Conversation Summary Panel ───────────────────────────────────────────────
+function SummaryPanel({ messages }: { messages: ChatMessage[] }) {
+  const [open, setOpen] = useState(false);
+
+  // Key points = Lucy's responses (non-empty assistant messages), most recent first
+  const keyPoints = messages
+    .filter(m => m.role === 'assistant' && m.content.trim().length > 10)
+    .slice(-6)
+    .reverse();
+
+  if (keyPoints.length === 0) return null;
+
+  return (
+    <div style={{
+      position: 'fixed',
+      bottom: 24,
+      right: 24,
+      zIndex: 30,
+      display: 'flex',
+      flexDirection: 'column',
+      alignItems: 'flex-end',
+      gap: 8,
+      pointerEvents: 'auto',
+    }}>
+      <AnimatePresence>
+        {open && (
+          <motion.div
+            initial={{ opacity: 0, y: 10, scale: 0.97 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 8, scale: 0.97 }}
+            transition={{ duration: 0.18 }}
+            style={{
+              width: 280,
+              maxHeight: 320,
+              overflowY: 'auto',
+              backgroundColor: 'rgba(255,255,255,0.92)',
+              backdropFilter: 'blur(20px)',
+              WebkitBackdropFilter: 'blur(20px)',
+              borderRadius: 14,
+              border: '1px solid rgba(255,255,255,0.6)',
+              boxShadow: '0 8px 32px rgba(0,0,0,0.22)',
+              padding: '12px 14px',
+            }}
+          >
+            <p style={{
+              margin: '0 0 10px',
+              fontSize: 10, fontWeight: 600, letterSpacing: '0.07em',
+              textTransform: 'uppercase', color: '#aaa',
+              fontFamily: "'Inter', system-ui, sans-serif",
+            }}>
+              Conversation summary
+            </p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {keyPoints.map((msg, i) => (
+                <div key={msg.id} style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+                  <span style={{
+                    flexShrink: 0, width: 5, height: 5, marginTop: 5,
+                    borderRadius: '50%', backgroundColor: '#0A84FF', opacity: 0.7 - i * 0.08,
+                    display: 'inline-block',
+                  }} />
+                  <span style={{
+                    fontSize: 12, lineHeight: 1.5, color: '#333',
+                    fontFamily: "'Inter', system-ui, sans-serif",
+                  }}>
+                    {msg.content.length > 120
+                      ? msg.content.slice(0, 117) + '…'
+                      : msg.content}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Toggle button */}
+      <button
+        onClick={() => setOpen(o => !o)}
+        title={open ? 'Hide summary' : 'View conversation summary'}
+        style={{
+          width: 38, height: 38,
+          borderRadius: '50%',
+          backgroundColor: open ? 'rgba(10,132,255,0.15)' : 'rgba(255,255,255,0.18)',
+          backdropFilter: 'blur(12px)',
+          WebkitBackdropFilter: 'blur(12px)',
+          border: '1px solid rgba(255,255,255,0.35)',
+          boxShadow: '0 2px 12px rgba(0,0,0,0.18)',
+          cursor: 'pointer',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          color: open ? '#0A84FF' : 'rgba(255,255,255,0.6)',
+          transition: 'all 0.15s',
+        }}
+        onMouseEnter={e => {
+          const b = e.currentTarget as HTMLButtonElement;
+          b.style.backgroundColor = open ? 'rgba(10,132,255,0.22)' : 'rgba(255,255,255,0.28)';
+        }}
+        onMouseLeave={e => {
+          const b = e.currentTarget as HTMLButtonElement;
+          b.style.backgroundColor = open ? 'rgba(10,132,255,0.15)' : 'rgba(255,255,255,0.18)';
+        }}
+      >
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+          <path d="M2 4C2 2.9 2.9 2 4 2H12C13.1 2 14 2.9 14 4V9C14 10.1 13.1 11 12 11H9L6 14V11H4C2.9 11 2 10.1 2 9V4Z"
+            stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round"/>
+          <path d="M5 6H11M5 8.5H9" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/>
+        </svg>
+      </button>
     </div>
   );
 }
