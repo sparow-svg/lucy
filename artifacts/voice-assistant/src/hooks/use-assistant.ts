@@ -41,6 +41,26 @@ export function useAssistant(
   const firstNameRef = useRef(firstName);
   useEffect(() => { firstNameRef.current = firstName; }, [firstName]);
 
+  // Load historical messages when opening an existing conversation
+  useEffect(() => {
+    if (!initialConvId) return;
+    fetch(`/api/openai/conversations/${initialConvId}/messages`, { credentials: 'include' })
+      .then(r => r.ok ? r.json() : [])
+      .then((msgs: Array<{ id: number; role: string; content: string }>) => {
+        const chatMsgs: ChatMessage[] = msgs
+          .filter(m => m.content?.trim())
+          .map(m => ({
+            id: `hist-${m.id}`,
+            role: m.role as 'user' | 'assistant',
+            content: m.content,
+          }));
+        if (chatMsgs.length > 0) setMessages(chatMsgs);
+      })
+      .catch(() => {});
+  // Only run on mount — intentionally omit initialConvId from deps
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // ── Refs ──────────────────────────────────────────────────────────────────
   const stateRef         = useRef<AssistantState>('dormant');
   const isPausedRef      = useRef(false);

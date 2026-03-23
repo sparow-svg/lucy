@@ -266,8 +266,10 @@ function AppContent() {
           firstName={user.firstName}
           conversationId={homeConvId}
           sidebarOpen={sidebarOpen}
+          nudges={nudgesList}
           onOpenSidebar={() => setSidebarOpen(true)}
           onConvCreated={handleConvCreated}
+          onDismissNudge={handleDismissNudge}
           onSignOut={handleSignOut}
         />
       </>

@@ -87,7 +87,10 @@ export const Orb = memo(function Orb({
   return (
     <div
       className="relative flex items-center justify-center cursor-pointer select-none"
-      style={{ width: SIZE + 40, height: SIZE + 40 }}
+      style={{
+        width: SIZE + 40, height: SIZE + 40,
+        mixBlendMode: 'screen',
+      }}
       onClick={onClick}
     >
       {/* Ambient glow — active states only */}

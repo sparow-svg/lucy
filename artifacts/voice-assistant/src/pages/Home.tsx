@@ -75,8 +75,10 @@ interface HomeProps {
   firstName?: string;
   conversationId?: number | null;
   sidebarOpen?: boolean;
+  nudges?: Array<{ id: number; text: string; dueAt: string | null }>;
   onOpenSidebar?: () => void;
   onConvCreated?: (conv: { id: number; title: string; createdAt: string }) => void;
+  onDismissNudge?: (id: number) => void;
   onSignOut?: () => void;
 }
 
@@ -87,8 +89,10 @@ export default function Home({
   firstName = "there",
   conversationId = null,
   sidebarOpen = false,
+  nudges = [],
   onOpenSidebar,
   onConvCreated,
+  onDismissNudge,
   onSignOut,
 }: HomeProps) {
   const { state, messages, micVolume, isSessionActive, isPaused, toggleRecording } =
@@ -274,7 +278,9 @@ export default function Home({
                       <ProfileMain
                         firstName={firstName}
                         connected={connected}
+                        nudges={nudges}
                         onOpenCalendar={() => setProfileSection('calendar')}
+                        onDismissNudge={(id) => onDismissNudge?.(id)}
                         onSignOut={() => { setShowProfile(false); onSignOut?.(); }}
                       />
                     ) : (
@@ -435,15 +441,20 @@ export default function Home({
 function ProfileMain({
   firstName,
   connected,
+  nudges,
   onOpenCalendar,
+  onDismissNudge,
   onSignOut,
 }: {
   firstName: string;
   connected: Record<string, boolean>;
+  nudges: Array<{ id: number; text: string; dueAt: string | null }>;
   onOpenCalendar: () => void;
+  onDismissNudge: (id: number) => void;
   onSignOut: () => void;
 }) {
   const connectedCount = Object.values(connected).filter(Boolean).length;
+  const [hoveredNudge, setHoveredNudge] = useState<number | null>(null);
 
   return (
     <div>
@@ -473,7 +484,70 @@ function ProfileMain({
         </div>
       </div>
 
-      {/* Calendar row */}
+      {/* Active nudges */}
+      {nudges.length > 0 && (
+        <div style={{ borderBottom: "1px solid #f0f0f0", padding: "8px 0 4px" }}>
+          <p style={{
+            margin: "0 16px 6px",
+            fontSize: 10, fontWeight: 600, color: "#bbb",
+            letterSpacing: "0.07em", textTransform: "uppercase",
+            fontFamily: "'Inter', system-ui, sans-serif",
+          }}>
+            Active nudges
+          </p>
+          {nudges.slice(0, 4).map(n => (
+            <div
+              key={n.id}
+              onMouseEnter={() => setHoveredNudge(n.id)}
+              onMouseLeave={() => setHoveredNudge(null)}
+              style={{
+                display: "flex", alignItems: "flex-start", justifyContent: "space-between",
+                padding: "5px 16px",
+                backgroundColor: hoveredNudge === n.id ? "#f8f8f8" : "transparent",
+                transition: "background 0.1s",
+              }}
+            >
+              <div style={{ flex: 1, minWidth: 0, paddingRight: 8 }}>
+                <span style={{
+                  fontSize: 12, color: "#333",
+                  fontFamily: "'Inter', system-ui, sans-serif",
+                  display: "block", lineHeight: 1.45,
+                  whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+                }}>
+                  {n.text}
+                </span>
+                {n.dueAt && (
+                  <span style={{ fontSize: 10, color: "#0A84FF", fontFamily: "'Inter', system-ui, sans-serif" }}>
+                    {new Date(n.dueAt).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}
+                  </span>
+                )}
+              </div>
+              <button
+                onClick={() => onDismissNudge(n.id)}
+                title="Dismiss"
+                style={{
+                  flexShrink: 0, background: "none", border: "none", cursor: "pointer",
+                  padding: 2, color: "#ddd", display: "flex", alignItems: "center",
+                  marginTop: 2,
+                }}
+                onMouseEnter={e => ((e.currentTarget as HTMLButtonElement).style.color = "#cc3333")}
+                onMouseLeave={e => ((e.currentTarget as HTMLButtonElement).style.color = "#ddd")}
+              >
+                <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
+                  <path d="M1.5 1.5L8.5 8.5M8.5 1.5L1.5 8.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/>
+                </svg>
+              </button>
+            </div>
+          ))}
+          {nudges.length > 4 && (
+            <p style={{ margin: "4px 16px 2px", fontSize: 11, color: "#bbb", fontFamily: "'Inter', system-ui, sans-serif" }}>
+              +{nudges.length - 4} more in sidebar
+            </p>
+          )}
+        </div>
+      )}
+
+      {/* Connected services row */}
       <button
         onClick={onOpenCalendar}
         style={{
@@ -494,13 +568,17 @@ function ProfileMain({
           </span>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-          {connectedCount > 0 && (
+          {connectedCount > 0 ? (
             <span style={{
               fontSize: 11, color: "#fff", backgroundColor: "#0A84FF",
               borderRadius: 10, padding: "1px 7px",
               fontFamily: "'Inter', system-ui, sans-serif",
             }}>
               {connectedCount}
+            </span>
+          ) : (
+            <span style={{ fontSize: 11, color: "#bbb", fontFamily: "'Inter', system-ui, sans-serif" }}>
+              Coming soon
             </span>
           )}
           <svg width="10" height="10" viewBox="0 0 10 10" fill="none">

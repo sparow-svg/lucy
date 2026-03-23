@@ -1,0 +1,60 @@
+Objective: Implement the remaining must-have functionality for Lucy so she becomes a fully functional personal assistant with clear value: full chat transcript, intelligent nudges, proper profile/sync, and orb blending effect.
+
+⸻
+
+1️⃣ Full Conversation Transcript
+	•	When a user clicks a previous conversation:
+• Load both user messages and Lucy responses from the DB.
+• Allow scrolling through the entire conversation (no 4–5 line limit).
+• Ensure new messages append to the transcript in real time.
+• Keep inline renaming, deletion, and numbering intact.
+
+⸻
+
+2️⃣ Nudges / Memory Trigger Intelligence
+	•	Nudge messages are only triggered once per context and are relevant to Memory or keywords.
+	•	Keywords: meeting, deadline, project, goal, reminder, nudge.
+	•	No filler phrases or unrelated questions.
+	•	When Memory matches the conversation context, Lucy references naturally without repeating or volunteering.
+
+⸻
+
+3️⃣ Calendar & Email Sync Fix
+	•	Current “Connect” must accurately check OAuth login status.
+• If the user hasn’t granted access, display the connect flow correctly.
+• Only mark “Connected” if actual calendar/email access is granted.
+	•	Suggest connections proactively when relevant references are detected in conversation.
+	•	Read-only summary first; do not trigger a nudge for every new email, only for relevant emails flagged in conversation.
+
+⸻
+
+4️⃣ Memory Panel & Guidance
+	•	Keep Memory panel collapsible below Conversations, not as a separate tab.
+	•	Display example items by default:
+• “I need to submit the report by Friday.”
+• “My favorite coffee is black.”
+• “Project deadline is March 28.”
+	•	Tooltip: “Lucy can remember things you tell her — she’ll bring them up later to help you stay on track.”
+	•	“Add” button only, no verbose labeling.
+
+⸻
+
+5️⃣ Orb Blending Effect
+	•	The orb must blend visually with the background behind it, as if part of the pupil behind.
+	•	Implement CSS filter / mix-blend-mode effect for dynamic background blending.
+	•	Keep the orb clickable and functional for wake-word / quick input.
+
+⸻
+
+6️⃣ Desktop App / Continuous Presence (Future Integration)
+	•	Prepare structure to support Electron/Tauri desktop wrap.
+	•	Ensure notifications for Nudges and proactive Memory are ready to trigger in desktop environment.
+
+⸻
+
+7️⃣ General Fixes / UX Polishing
+	•	Remove “What are you working on?” and any other redundant opening questions.
+	•	Only one greeting per session:
+• "Good afternoon, [firstName]. What's up for today?"
+	•	Ensure sidebar, conversations, and nudges panel behave consistently: collapsible, slim, rounded, white/blurred background.
+	•	Fix Profile/Settings area to show active nudges, sync status, and ability to dismiss nudges.
