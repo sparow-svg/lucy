@@ -1,0 +1,40 @@
+{
+  "name": "lucy-desktop",
+  "version": "1.0.0",
+  "description": "Lucy — Living Colleague desktop app",
+  "main": "src/main.js",
+  "scripts": {
+    "start": "electron .",
+    "build:mac": "electron-builder --mac --x64 --arm64",
+    "build:win": "electron-builder --win --x64",
+    "build:linux": "electron-builder --linux --x64"
+  },
+  "build": {
+    "appId": "com.lucy.assistant",
+    "productName": "Lucy",
+    "copyright": "Copyright © 2025 Lucy",
+    "mac": {
+      "category": "public.app-category.productivity",
+      "icon": "assets/icon.icns",
+      "target": [{ "target": "dmg", "arch": ["x64", "arm64"] }],
+      "darkModeSupport": true
+    },
+    "win": {
+      "icon": "assets/icon.ico",
+      "target": [{ "target": "nsis", "arch": ["x64"] }]
+    },
+    "linux": {
+      "icon": "assets/icon.png",
+      "target": [{ "target": "AppImage" }]
+    },
+    "files": ["src/**/*", "assets/**/*", "package.json"],
+    "extraMetadata": {
+      "main": "src/main.js"
+    }
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "electron": "^32.0.0",
+    "electron-builder": "^24.0.0"
+  }
+}

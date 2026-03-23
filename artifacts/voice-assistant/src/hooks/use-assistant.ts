@@ -74,8 +74,9 @@ export function useAssistant(
   const pollTimer        = useRef<ReturnType<typeof setInterval> | null>(null);
   const silenceStart     = useRef<number | null>(null);
   const recordStart      = useRef<number>(0);
-  const lastUserSpeechMs = useRef(0);
-  const lastPauseCheckMs = useRef(0);
+  const lastUserSpeechMs    = useRef(0);
+  const lastPauseCheckMs    = useRef(0);
+  const hadSpeechInRecording = useRef(false); // true if user actually spoke during this recording
   const hasInit          = useRef(false);
   const hasGreeted       = useRef(false);
   const isActivated      = useRef(false);
@@ -116,7 +117,7 @@ export function useAssistant(
     setIsPaused(false);
     isSessionRef.current = false;
     isActivated.current  = false;
-    hasGreeted.current   = false;
+    // hasGreeted intentionally NOT reset — greeting fires only once per conversation load
     lastUserSpeechMs.current = 0;
     if (sessionTimeout.current) clearTimeout(sessionTimeout.current);
     setIsSessionActive(false);
@@ -254,6 +255,9 @@ export function useAssistant(
       }
 
       if (s === 'listening') {
+        // Track whether the user actually spoke above speech threshold
+        if (rms > SPEECH_THRESHOLD) hadSpeechInRecording.current = true;
+
         if (recordStart.current > 0 && now - recordStart.current > MAX_RECORD_MS) {
           silenceStart.current = null;
           doStopListeningRef.current?.();
@@ -283,6 +287,7 @@ export function useAssistant(
     if (s === 'thinking' || s === 'speaking' || s === 'listening') return;
     armSessionTimer();
     chunks.current = [];
+    hadSpeechInRecording.current = false; // reset for each new recording
     try {
       const rec = new MediaRecorder(micStream.current);
       recorder.current = rec;
@@ -313,6 +318,12 @@ export function useAssistant(
 
   const doProcessVoice = useCallback(async (blob: Blob) => {
     if (blob.size < MIN_BLOB_BYTES) {
+      setStateSafe('idle');
+      setTimeout(() => doStartListeningRef.current?.(), 80);
+      return;
+    }
+    // If user never crossed speech threshold, discard — don't call the API for silence
+    if (!hadSpeechInRecording.current) {
       setStateSafe('idle');
       setTimeout(() => doStartListeningRef.current?.(), 80);
       return;
@@ -447,6 +458,8 @@ export function useAssistant(
     hasInit.current = true;
     if (initialConvId !== null) {
       convId.current = initialConvId;
+      // Never greet on a conversation the user is resuming
+      hasGreeted.current = true;
       return;
     }
     fetch('/api/openai/conversations', {
@@ -495,7 +508,9 @@ export function useAssistant(
                 isActivated.current  = true;
                 isSessionRef.current = true;
                 setIsSessionActive(true);
-                lastUserSpeechMs.current = 0;
+                // Seed silence timer from activation so 10s auto-pause fires
+                // even if the user never speaks after "Lucy"
+                lastUserSpeechMs.current = Date.now();
                 await openMic();
                 startPoll();
                 doGreet();

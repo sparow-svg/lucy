@@ -213,6 +213,11 @@ function AppContent() {
       if (res.ok) {
         const nudge: Nudge = await res.json();
         setNudgesList(prev => [...prev, nudge]);
+        // Fire native notification when running as Electron desktop app
+        const ld = (window as any).lucyDesktop;
+        if (ld?.isDesktop && ld?.sendNudge) {
+          ld.sendNudge("Lucy nudge", nudge.text);
+        }
       }
     } catch { /* ignore */ }
   }, []);
