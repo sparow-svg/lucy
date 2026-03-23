@@ -1,11 +1,14 @@
 import { Router, type IRouter } from "express";
 import { db, messages, conversations } from "@workspace/db";
-import { eq } from "drizzle-orm";
-import { voiceChatStream, ensureCompatibleFormat } from "@workspace/integrations-openai-ai-server/audio";
+import { eq, asc } from "drizzle-orm";
+import { ensureCompatibleFormat } from "@workspace/integrations-openai-ai-server/audio";
 import { openai } from "@workspace/integrations-openai-ai-server";
 import { LUCY_SYSTEM_PROMPT } from "../../data/mockData.js";
 
 const router: IRouter = Router({ mergeParams: true });
+
+// How many recent turns of history to include
+const MAX_HISTORY_TURNS = 8;
 
 router.post("/:id/voice-messages", async (req, res) => {
   const id = parseInt(req.params.id, 10);
@@ -28,26 +31,79 @@ router.post("/:id/voice-messages", async (req, res) => {
 
     const audioBuffer = Buffer.from(audio, "base64");
     const { buffer, format } = await ensureCompatibleFormat(audioBuffer);
+    const audioBase64 = buffer.toString("base64");
+
+    // Fetch recent conversation history for context
+    const history = await db
+      .select()
+      .from(messages)
+      .where(eq(messages.conversationId, id))
+      .orderBy(asc(messages.id));
+
+    // Build history messages — text-only turns from DB
+    const recentHistory = history.slice(-MAX_HISTORY_TURNS * 2);
+    const historyMessages = recentHistory
+      .filter((m) => m.content && m.content !== "[voice message]")
+      .map((m) => ({
+        role: m.role as "user" | "assistant",
+        content: m.content as string,
+      }));
 
     res.setHeader("Content-Type", "text/event-stream");
     res.setHeader("Cache-Control", "no-cache");
     res.setHeader("Connection", "keep-alive");
     res.flushHeaders();
 
+    let userTranscript = "";
     let assistantTranscript = "";
 
-    const stream = await voiceChatStream(buffer, "nova", format);
+    // Single gpt-audio call: system + history + current audio input → streaming text + audio
+    const stream = await openai.chat.completions.create({
+      model: "gpt-audio",
+      modalities: ["text", "audio"],
+      audio: { voice: "nova", format: "pcm16" },
+      messages: [
+        { role: "system", content: LUCY_SYSTEM_PROMPT },
+        ...historyMessages,
+        {
+          role: "user",
+          content: [
+            { type: "input_audio", input_audio: { data: audioBase64, format } },
+          ] as any,
+        },
+      ],
+      stream: true,
+    });
 
-    for await (const event of stream) {
-      if (event.type === "transcript") {
-        assistantTranscript += event.data;
+    for await (const chunk of stream) {
+      const delta = chunk.choices?.[0]?.delta as any;
+      if (!delta) continue;
+
+      if (delta?.audio?.transcript) {
+        assistantTranscript += delta.audio.transcript;
+        res.write(`data: ${JSON.stringify({ type: "transcript", data: delta.audio.transcript })}\n\n`);
       }
-      res.write(`data: ${JSON.stringify(event)}\n\n`);
+      if (delta?.audio?.data) {
+        res.write(`data: ${JSON.stringify({ type: "audio", data: delta.audio.data })}\n\n`);
+      }
+      // Capture user transcript if returned
+      if (delta?.content) {
+        userTranscript += delta.content;
+      }
     }
 
+    // Save both turns to DB (with real transcript for future context)
     await db.insert(messages).values([
-      { conversationId: id, role: "user", content: "[voice message]" },
-      { conversationId: id, role: "assistant", content: assistantTranscript },
+      {
+        conversationId: id,
+        role: "user",
+        content: userTranscript || "[voice input]",
+      },
+      {
+        conversationId: id,
+        role: "assistant",
+        content: assistantTranscript,
+      },
     ]);
 
     res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
@@ -82,6 +138,21 @@ router.post("/:id/messages", async (req, res) => {
       return;
     }
 
+    // Fetch recent history
+    const history = await db
+      .select()
+      .from(messages)
+      .where(eq(messages.conversationId, id))
+      .orderBy(asc(messages.id));
+
+    const recentHistory = history.slice(-MAX_HISTORY_TURNS * 2);
+    const historyMessages = recentHistory
+      .filter((m) => m.content && m.content !== "[voice message]")
+      .map((m) => ({
+        role: m.role as "user" | "assistant",
+        content: m.content as string,
+      }));
+
     res.setHeader("Content-Type", "text/event-stream");
     res.setHeader("Cache-Control", "no-cache");
     res.setHeader("Connection", "keep-alive");
@@ -93,6 +164,7 @@ router.post("/:id/messages", async (req, res) => {
       model: "gpt-5-mini",
       messages: [
         { role: "system", content: LUCY_SYSTEM_PROMPT },
+        ...historyMessages,
         { role: "user", content },
       ],
       max_completion_tokens: 8192,
