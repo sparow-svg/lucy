@@ -8,7 +8,7 @@ import { LUCY_SYSTEM_PROMPT } from "../../data/mockData.js";
 const router: IRouter = Router({ mergeParams: true });
 
 // How many recent turns of history to include
-const MAX_HISTORY_TURNS = 8;
+const MAX_HISTORY_TURNS = 10;
 
 router.post("/:id/voice-messages", async (req, res) => {
   const id = parseInt(req.params.id, 10);

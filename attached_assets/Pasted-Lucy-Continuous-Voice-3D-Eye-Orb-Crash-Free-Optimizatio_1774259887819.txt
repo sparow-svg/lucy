@@ -1,0 +1,54 @@
+Lucy — Continuous Voice, 3D Eye + Orb, Crash-Free Optimization
+
+OBJECTIVE:
+- Make Lucy fully interactive with fluent, multi-turn voice conversation.
+- Eye + orb appear as a living interface: realistic pupil + interactive Apple-blue orb/ring overlay.
+- Ensure stable performance on desktop, Safari, and low-spec machines.
+
+---
+
+1. Continuous Voice Interaction:
+- After wake-word “Lucy”, enter an **always-on listening session** until explicit stop or session timeout (45–60s).
+- Microphone remains open; do not require clicking the orb for follow-ups.
+- Implement **barge-in**: if the user speaks while Lucy is speaking, immediately stop TTS and switch orb to listening.
+- Maintain last 8–12 conversation turns in memory for context-aware responses.
+- Use streaming STT with partial transcript handling for low-latency response (<300ms).
+
+2. Orb / Eye Interface:
+- Replace static pupil `<img>` with a **lightweight 3D render** (Three.js / WebGL) if possible, or Canvas/SVG overlay for performance.
+- Eye is static; centered vertically & horizontally on the screen.
+- Pupil coordinates aligned to screen center.
+- Overlay a small interactive orb/ring on the pupil:
+  - Dormant: black (#1a1a1a) with subtle specular highlight.
+  - Listening: soft Apple-blue (#0A84FF)
+  - Thinking: deeper blue (#0051D5) with breathing pulse
+  - Speaking: bright blue with glow/ring animation
+- Voice amplitude drives orb/ring scale and glow.
+- Optional: subtle eye micro-blinks or pupil dilation every few seconds for realism, CPU-friendly.
+
+3. Session Handling & Performance:
+- Persistent AudioContext; mic opened once per session.
+- Stop individual buffer sources instead of closing full context.
+- Throttle STT input & orb updates to max 60ms intervals.
+- Partial audio streaming for TTS; free memory buffers immediately after use.
+- Session timeout 45–60s; resets on every interaction.
+- Wake-word listener re-armed automatically after timeout.
+
+4. UX & Micro-Interactions:
+- Thinking micro-fillers while processing: cycle “Hmm… / Got it… / Right… / Let me think… / Sure…” every 1.8s.
+- Orb visually reacts to voice states (listening, thinking, speaking) continuously.
+- Task board / optional dashboard can appear below logo for productivity tasks, fully voice-integrated.
+
+5. Testing / Browser Considerations:
+- Must be Safari-friendly; low CPU/GPU usage.
+- Ensure multi-turn conversation continues fluidly in various environments (office, car, street).
+- Validate continuous voice without needing clicks after wake-word.
+- Ensure the orb always aligns with the pupil and responds smoothly.
+
+---
+
+EXPECTED OUTCOME:
+- Eye centered on screen with pupil as focal point.
+- Orb/ring reacts live to voice without clicks.
+- Full continuous conversation with context memory.
+- Lightweight, crash-free performance across desktop, mobile, and Safari.
