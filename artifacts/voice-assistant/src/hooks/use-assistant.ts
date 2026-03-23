@@ -285,6 +285,13 @@ export function useAssistant() {
   const doProcessVoice = useCallback(async (blob: Blob) => {
     if (isProcessing.current || isPausedRef.current) return;
     if (!convId.current) { setStateSafe('idle'); return; }
+    // Guard: empty or near-empty blob = silence only, skip processing
+    if (blob.size < 2000) {
+      setStateSafe('idle');
+      // Immediately resume listening so conversation continues
+      setTimeout(() => doStartListeningRef.current?.(), 100);
+      return;
+    }
     isProcessing.current = true;
     armSessionTimer();
     const ctx = sharedCtx.current;
