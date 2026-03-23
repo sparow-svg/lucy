@@ -39,7 +39,12 @@ jobs:
         with:
           files: desktop/dist/*.dmg
           generate_release_notes: true
+<<<<<<< HEAD
           token: ${{ secrets.GH_TOKEN }}  # <<-- USE YOUR PERSONAL TOKEN HERE
+=======
+        env:
+          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+>>>>>>> f9dac4a (Update GitHub Actions workflow to use correct token for releases)
 
   build-win:
     runs-on: windows-latest
@@ -73,4 +78,9 @@ jobs:
         with:
           files: desktop/dist/*.exe
           generate_release_notes: true
+<<<<<<< HEAD
           token: ${{ secrets.GH_TOKEN }}  # <<-- USE YOUR PERSONAL TOKEN HERE
+=======
+        env:
+          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+>>>>>>> f9dac4a (Update GitHub Actions workflow to use correct token for releases)
