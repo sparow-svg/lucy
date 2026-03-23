@@ -2,73 +2,127 @@ import { useAssistant } from "@/hooks/use-assistant";
 import { Orb } from "@/components/Orb";
 import { Transcript } from "@/components/Transcript";
 import { motion, AnimatePresence } from "framer-motion";
-import { Mic, Square, Loader2, Volume2 } from "lucide-react";
 
 export default function Home() {
-  const { state, messages, toggleRecording } = useAssistant();
+  const { state, messages, isSessionActive, startSession, toggleRecording } = useAssistant();
 
-  const getStatusText = () => {
+  const handleOrbClick = () => {
+    if (!isSessionActive) return;
+    toggleRecording();
+  };
+
+  const getStatusLabel = () => {
     switch (state) {
-      case 'idle': return "Tap to speak";
-      case 'listening': return "Listening...";
-      case 'thinking': return "Thinking...";
-      case 'speaking': return "Speaking...";
-      default: return "";
+      case 'dormant': return null;
+      case 'idle': return "tap to speak";
+      case 'listening': return "listening";
+      case 'thinking': return "thinking";
+      case 'speaking': return "speaking";
     }
   };
 
-  const getStatusIcon = () => {
-    switch (state) {
-      case 'idle': return <Mic className="w-3.5 h-3.5" />;
-      case 'listening': return <Square className="w-3.5 h-3.5 fill-current" />;
-      case 'thinking': return <Loader2 className="w-3.5 h-3.5 animate-spin" />;
-      case 'speaking': return <Volume2 className="w-3.5 h-3.5" />;
-      default: return null;
-    }
-  };
+  const label = getStatusLabel();
 
   return (
-    <main className="min-h-screen w-full flex flex-col items-center bg-background overflow-hidden relative selection:bg-foreground selection:text-background">
-      
-      {/* Subtle background noise texture */}
-      <div 
-        className="absolute inset-0 z-0 opacity-[0.015] pointer-events-none mix-blend-multiply"
-        style={{ backgroundImage: 'url("data:image/svg+xml,%3Csvg viewBox=\'0 0 200 200\' xmlns=\'http://www.w3.org/2000/svg\'%3E%3Cfilter id=\'noiseFilter\'%3E%3CfeTurbulence type=\'fractalNoise\' baseFrequency=\'0.65\' numOctaves=\'3\' stitchTiles=\'stitch\'/%3E%3C/filter%3E%3Crect width=\'100%25\' height=\'100%25\' filter=\'url(%23noiseFilter)\'/%3E%3C/svg%3E")' }}
-      />
+    <div className="min-h-screen w-full bg-white flex flex-col relative overflow-hidden">
 
-      {/* Header */}
-      <header className="w-full flex justify-center pt-12 pb-4 z-10">
-        <h1 className="text-[10px] font-semibold tracking-[0.25em] text-muted-foreground uppercase">
-          Chief of Staff
-        </h1>
+      {/* Fixed Header — no border, no bg */}
+      <header className="fixed top-0 left-0 right-0 z-50 flex items-center justify-between px-8 h-16">
+        {/* LUCY wordmark */}
+        <span
+          className="text-black font-semibold tracking-tight select-none"
+          style={{ fontSize: 16, letterSpacing: '-0.01em', fontFamily: "'Geist', 'Inter', sans-serif" }}
+        >
+          LUCY
+        </span>
+
+        {/* Start button — only visible when dormant */}
+        <AnimatePresence>
+          {!isSessionActive && (
+            <motion.button
+              initial={{ opacity: 0, scale: 0.9 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.9 }}
+              transition={{ type: 'spring', stiffness: 300, damping: 22 }}
+              onClick={startSession}
+              className="flex items-center justify-center text-white font-bold select-none focus:outline-none"
+              style={{
+                width: 44,
+                height: 44,
+                borderRadius: '50%',
+                fontSize: 12,
+                background: 'linear-gradient(135deg, #4facfe 0%, #3b82f6 40%, #6366f1 100%)',
+                boxShadow: '0 4px 16px rgba(59,130,246,0.35), 0 1px 3px rgba(0,0,0,0.12)',
+                letterSpacing: '0.01em',
+              }}
+              whileHover={{ scale: 1.06, boxShadow: '0 6px 20px rgba(59,130,246,0.45)' }}
+              whileTap={{ scale: 0.94 }}
+            >
+              Start
+            </motion.button>
+          )}
+        </AnimatePresence>
+
+        {/* End button — visible once session active */}
+        <AnimatePresence>
+          {isSessionActive && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="text-xs text-[#9CA3AF] select-none"
+              style={{ fontFamily: "'Geist', 'Inter', sans-serif" }}
+            >
+              {state === 'listening' ? '● recording' : state === 'speaking' ? '● speaking' : ''}
+            </motion.div>
+          )}
+        </AnimatePresence>
       </header>
 
-      {/* Center UI */}
-      <div className="flex-1 flex flex-col items-center justify-center w-full z-10 -mt-16">
-        
-        <Orb state={state} onClick={toggleRecording} />
-        
-        {/* Status Indicator */}
-        <div className="mt-12 h-8 flex items-center justify-center">
+      {/* Main Stage — full height, orb only */}
+      <main className="flex-1 flex flex-col items-center justify-center">
+
+        {/* The Orb — sole focus of the center stage */}
+        <Orb
+          state={state}
+          onClick={handleOrbClick}
+          isSessionActive={isSessionActive}
+        />
+
+        {/* Status label — tiny, secondary, below orb */}
+        <div className="h-6 mt-5 flex items-center justify-center">
           <AnimatePresence mode="wait">
-            <motion.div
-              key={state}
-              initial={{ opacity: 0, y: 5 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -5 }}
-              transition={{ duration: 0.2 }}
-              className="flex items-center gap-2 text-xs font-medium tracking-widest text-muted-foreground uppercase"
-            >
-              {getStatusIcon()}
-              <span>{getStatusText()}</span>
-            </motion.div>
+            {label && (
+              <motion.span
+                key={label}
+                initial={{ opacity: 0, y: 3 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -3 }}
+                transition={{ duration: 0.18 }}
+                className="text-[11px] text-[#9CA3AF] tracking-widest uppercase select-none"
+                style={{ fontFamily: "'Geist', 'Inter', sans-serif", letterSpacing: '0.12em' }}
+              >
+                {label}
+              </motion.span>
+            )}
           </AnimatePresence>
         </div>
 
+        {/* Transcript */}
         <Transcript messages={messages} />
-        
-      </div>
-      
-    </main>
+
+      </main>
+
+      {/* Footer — pure text, bottom-right, no borders */}
+      <footer className="fixed bottom-0 right-0 pb-5 pr-8 z-50 pointer-events-none">
+        <span
+          className="text-[#9CA3AF] select-none"
+          style={{ fontSize: 11, fontFamily: "'Geist', 'Inter', sans-serif" }}
+        >
+          Latency: &lt;300ms&nbsp;&nbsp;|&nbsp;&nbsp;Subscribed
+        </span>
+      </footer>
+
+    </div>
   );
 }

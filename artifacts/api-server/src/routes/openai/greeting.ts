@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { openai } from "@workspace/integrations-openai-ai-server";
-import { CHIEF_OF_STAFF_SYSTEM_PROMPT } from "../../data/mockData.js";
+import { LUCY_SYSTEM_PROMPT } from "../../data/mockData.js";
 
 const router: IRouter = Router();
 
@@ -18,11 +18,11 @@ router.post("/", async (req, res) => {
   res.flushHeaders();
 
   try {
-    const greetingPrompt = `${CHIEF_OF_STAFF_SYSTEM_PROMPT}
+    const greetingPrompt = `${LUCY_SYSTEM_PROMPT}
 
-User context for today: ${context}
+Alex's context for today: ${context}
 
-Greet the user with ONE brief, specific, helpful sentence. Reference something concrete from their day. No pleasantries.`;
+Give your opening greeting. Be specific about ONE thing — ideally the Sequoia call at 2:00 PM or whatever is most time-sensitive. Something like: "Hey! I see that Sequoia call at 2:00. Want to bounce some ideas around before then?" — that energy, that specificity, that brevity. One or two sentences. Go.`;
 
     const textRes = await openai.chat.completions.create({
       model: "gpt-5-mini",
@@ -31,18 +31,18 @@ Greet the user with ONE brief, specific, helpful sentence. Reference something c
       ],
     });
 
-    const greetingText = textRes.choices[0]?.message?.content ?? "Ready when you are.";
+    const greetingText = textRes.choices[0]?.message?.content ?? "Hey, I'm here. What are we working on?";
 
     res.write(`data: ${JSON.stringify({ type: "transcript", data: greetingText })}\n\n`);
 
     const ttsStream = await openai.chat.completions.create({
       model: "gpt-audio",
       modalities: ["text", "audio"],
-      audio: { voice: "alloy", format: "pcm16" },
+      audio: { voice: "nova", format: "pcm16" },
       messages: [
         {
           role: "user",
-          content: `Say exactly this, naturally: "${greetingText}"`,
+          content: `Say this naturally, like you're talking to a friend — warm and unhurried: "${greetingText}"`,
         },
       ],
       stream: true,
@@ -58,7 +58,7 @@ Greet the user with ONE brief, specific, helpful sentence. Reference something c
     res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
     res.end();
   } catch (err) {
-    req.log.error({ err }, "Greeting failed");
+    req.log.error({ err }, "Lucy greeting failed");
     if (!res.headersSent) {
       res.status(500).json({ error: "Greeting failed" });
     } else {

@@ -3,7 +3,7 @@ import { db, messages, conversations } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import { voiceChatStream, ensureCompatibleFormat } from "@workspace/integrations-openai-ai-server/audio";
 import { openai } from "@workspace/integrations-openai-ai-server";
-import { CHIEF_OF_STAFF_SYSTEM_PROMPT } from "../../data/mockData.js";
+import { LUCY_SYSTEM_PROMPT } from "../../data/mockData.js";
 
 const router: IRouter = Router({ mergeParams: true });
 
@@ -36,7 +36,7 @@ router.post("/:id/voice-messages", async (req, res) => {
 
     let assistantTranscript = "";
 
-    const stream = await voiceChatStream(buffer, "alloy", format);
+    const stream = await voiceChatStream(buffer, "nova", format);
 
     for await (const event of stream) {
       if (event.type === "transcript") {
@@ -92,7 +92,7 @@ router.post("/:id/messages", async (req, res) => {
     const stream = await openai.chat.completions.create({
       model: "gpt-5-mini",
       messages: [
-        { role: "system", content: CHIEF_OF_STAFF_SYSTEM_PROMPT },
+        { role: "system", content: LUCY_SYSTEM_PROMPT },
         { role: "user", content },
       ],
       max_completion_tokens: 8192,

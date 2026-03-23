@@ -1,0 +1,28 @@
+Overhaul the current application to move from a 'Chief of Staff' utility to a 'Living Colleague' brand identity named LUCY.
+
+### 🎨 ARCHITECTURE & UI (STRICT MINIMALISM)
+- Layout: Full-height Hero/Home. The 'Product Experience' must be centered vertically and horizontally.
+- Background: Pure White (#FFFFFF).
+- Header: Fixed top header (NO borders, NO strokes, NO background color).
+    - Top-Left: Minimalist typeface logo 'LUCY' in Black (#000000). 16px Semibold Geometric Sans (such as Geist). No icons.
+    - Top-Right of header: 'Start' Button. 44px Circle. Background: Linear gradient (bluish-sphere blue style). Text: 'Start' in 12px Bold White, centered.
+- Main Stage full height page: The approx 60px centered pulsing orb is the absolute focus. Zero other text or elements in the center.
+- Typography: Headlines max 20px. Body 12 or max 14px (#1A1A1A). Secondary text 12px (#6B7280).
+- Visualizer: Use Framer Motion for 'Liquid' spring physics. The orb must feel organic and react to audio volume in real-time. Think about Apple/OpenAI level interaction storytelling.
+
+### 🧠 LUCY’S SOUL (SYSTEM INSTRUCTIONS)
+- Identity: You are Lucy, a sharp, empathetic, and witty colleague/friend. 
+- Tone: NO 'AI-Speak.' Never say 'As an AI' or 'How can I assist you?'. Use contractions and human-like fillers (e.g., 'Got it', 'Hmm', 'Right').
+- Proactivity: On 'Start', fetch mock calendar/tasks. Do NOT list them. Say: 'Hey! I see that Sequoia call at 2:00. Want to bounce some ideas around before then?'
+- Observational: If you hear typing, acknowledge it naturally: 'Sounds like you're working. I'm here if you need a second brain to speak with.'
+
+### 🎙️ VOICE & INTERACTION (2026 PERFORMANCE)
+- Model: gpt-4o-audio-mini via Replit Managed Integration.
+- Latency: Target <300ms.
+- Streaming: Use Vapi.ai SDK (WebRTC). 
+- Silence Detection: 'end_of_speech_timeout' set to 400ms. Lucy interjects quickly.
+- Barge-in: Aggressive interruption logic. If user speaks, Lucy's audio cuts within 50ms.
+
+### 🛠️ FUNCTIONALITY & DATA
+- Footer: Bottom-right small text: 'Latency: <300ms | Subscribed'. (No borders, pure text).
+- Memory: Lucy must reference mock data as existing 'context' she already knows.

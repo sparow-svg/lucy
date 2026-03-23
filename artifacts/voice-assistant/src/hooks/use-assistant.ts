@@ -1,8 +1,8 @@
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect } from "react";
 import { AudioQueue } from "@/lib/audio-queue";
 import { useGetAssistantContext } from "@/hooks/use-queries";
 
-export type AssistantState = 'idle' | 'listening' | 'thinking' | 'speaking';
+export type AssistantState = 'dormant' | 'idle' | 'listening' | 'thinking' | 'speaking';
 
 export interface ChatMessage {
   id: string;
@@ -10,25 +10,28 @@ export interface ChatMessage {
   content: string;
 }
 
+const SILENCE_TIMEOUT_MS = 400;
+const SILENCE_THRESHOLD = 0.012;
+
 export function useAssistant() {
-  const [state, setState] = useState<AssistantState>('idle');
+  const [state, setState] = useState<AssistantState>('dormant');
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [conversationId, setConversationId] = useState<number | null>(null);
-  
+  const [isSessionActive, setIsSessionActive] = useState(false);
+
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const audioQueueRef = useRef<AudioQueue>(new AudioQueue());
-  
-  // Context query
-  const { data: contextData, isSuccess: isContextReady } = useGetAssistantContext({
+  const analyserRef = useRef<AnalyserNode | null>(null);
+  const silenceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const volumeFrameRef = useRef<number | null>(null);
+
+  const { data: contextData } = useGetAssistantContext({
     query: { retry: false, refetchOnWindowFocus: false }
   });
 
-  const isFirstMount = useRef(true);
-
-  // Parse generic SSE
   const parseSSE = async (
-    response: Response, 
+    response: Response,
     onTranscript: (text: string) => void,
     onAudio: (base64: string) => void,
     onDone: () => void
@@ -42,7 +45,7 @@ export function useAssistant() {
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
-        
+
         buffer += decoder.decode(value, { stream: true });
         const lines = buffer.split('\n\n');
         buffer = lines.pop() || '';
@@ -50,10 +53,10 @@ export function useAssistant() {
         for (const block of lines) {
           const dataLine = block.split('\n').find(l => l.startsWith('data: '));
           if (!dataLine) continue;
-          
+
           const dataStr = dataLine.slice(6);
           if (dataStr === '[DONE]') continue;
-          
+
           try {
             const parsed = JSON.parse(dataStr);
             if (parsed.type === 'transcript' || parsed.content) {
@@ -63,8 +66,8 @@ export function useAssistant() {
             } else if (parsed.done) {
               onDone();
             }
-          } catch (e) {
-            // Ignore malformed JSON chunks
+          } catch {
+            // ignore malformed chunk
           }
         }
       }
@@ -73,74 +76,122 @@ export function useAssistant() {
     }
   };
 
-  // 1. Proactive Greeting Flow
-  useEffect(() => {
-    if (isFirstMount.current && isContextReady && contextData) {
-      isFirstMount.current = false;
-      
-      const initiateGreeting = async () => {
-        try {
-          setState('thinking');
-          
-          // Create conversation first
-          const convRes = await fetch('/api/openai/conversations', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ title: 'New Session' })
-          });
-          if (convRes.ok) {
-            const conv = await convRes.json();
-            setConversationId(conv.id);
-          }
-
-          // Trigger greeting
-          const res = await fetch('/api/openai/proactive-greeting', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ context: JSON.stringify(contextData) })
-          });
-
-          if (!res.ok) throw new Error('Failed to fetch greeting');
-
-          setState('speaking');
-          let accumulatedText = "";
-          const msgId = Math.random().toString(36).substring(7);
-
-          setMessages([{ id: msgId, role: 'assistant', content: '' }]);
-
-          await parseSSE(res, 
-            (text) => {
-              accumulatedText += text;
-              setMessages(prev => prev.map(m => m.id === msgId ? { ...m, content: accumulatedText } : m));
-            },
-            (audio) => audioQueueRef.current.playChunk(audio),
-            () => setState('idle')
-          );
-
-        } catch (e) {
-          console.error("Proactive greeting failed", e);
-          setState('idle');
-        }
-      };
-
-      initiateGreeting();
-    }
-  }, [isContextReady, contextData]);
-
-  // Handle stream end check
+  // Monitor when speaking finishes
   useEffect(() => {
     const interval = setInterval(() => {
       if (state === 'speaking' && !audioQueueRef.current.isCurrentlyPlaying) {
         setState('idle');
       }
-    }, 500);
+    }, 200);
     return () => clearInterval(interval);
   }, [state]);
 
+  const triggerGreeting = async (convId: number) => {
+    if (!contextData) return;
+    try {
+      const res = await fetch('/api/openai/proactive-greeting', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ context: JSON.stringify(contextData) })
+      });
+
+      if (!res.ok) throw new Error('Greeting failed');
+
+      setState('speaking');
+      let accumulatedText = "";
+      const msgId = crypto.randomUUID();
+      setMessages([{ id: msgId, role: 'assistant', content: '' }]);
+
+      await parseSSE(res,
+        (text) => {
+          accumulatedText += text;
+          setMessages(prev => prev.map(m => m.id === msgId ? { ...m, content: accumulatedText } : m));
+        },
+        (audio) => audioQueueRef.current.playChunk(audio),
+        () => setState('idle')
+      );
+    } catch {
+      setState('idle');
+    }
+  };
+
+  const startSession = async () => {
+    if (isSessionActive) return;
+    setIsSessionActive(true);
+
+    try {
+      setState('thinking');
+
+      const convRes = await fetch('/api/openai/conversations', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title: 'Lucy Session' })
+      });
+      if (!convRes.ok) throw new Error('Could not create conversation');
+      const conv = await convRes.json();
+      setConversationId(conv.id);
+
+      await triggerGreeting(conv.id);
+    } catch {
+      setState('idle');
+    }
+  };
+
+  const stopSilenceDetection = () => {
+    if (silenceTimerRef.current) {
+      clearTimeout(silenceTimerRef.current);
+      silenceTimerRef.current = null;
+    }
+    if (volumeFrameRef.current) {
+      cancelAnimationFrame(volumeFrameRef.current);
+      volumeFrameRef.current = null;
+    }
+  };
+
+  const startSilenceDetection = (stream: MediaStream, onSilence: () => void) => {
+    const audioCtx = new AudioContext();
+    const source = audioCtx.createMediaStreamSource(stream);
+    const analyser = audioCtx.createAnalyser();
+    analyser.fftSize = 256;
+    analyser.smoothingTimeConstant = 0.8;
+    source.connect(analyser);
+    analyserRef.current = analyser;
+
+    const dataArray = new Uint8Array(analyser.frequencyBinCount);
+
+    let silenceStart: number | null = null;
+
+    const check = () => {
+      analyser.getByteTimeDomainData(dataArray);
+      let sum = 0;
+      for (let i = 0; i < dataArray.length; i++) {
+        const v = (dataArray[i] - 128) / 128;
+        sum += v * v;
+      }
+      const rms = Math.sqrt(sum / dataArray.length);
+
+      if (rms < SILENCE_THRESHOLD) {
+        if (silenceStart === null) {
+          silenceStart = Date.now();
+        } else if (Date.now() - silenceStart > SILENCE_TIMEOUT_MS) {
+          stopSilenceDetection();
+          audioCtx.close();
+          onSilence();
+          return;
+        }
+      } else {
+        silenceStart = null;
+      }
+
+      volumeFrameRef.current = requestAnimationFrame(check);
+    };
+
+    volumeFrameRef.current = requestAnimationFrame(check);
+  };
 
   const startRecording = async () => {
     try {
-      // Barge-in: stop playback if speaking
+      // Barge-in: immediately stop Lucy's audio
       if (state === 'speaking') {
         audioQueueRef.current.stop();
       }
@@ -155,79 +206,81 @@ export function useAssistant() {
       };
 
       recorder.onstop = async () => {
+        stopSilenceDetection();
         const blob = new Blob(audioChunksRef.current, { type: recorder.mimeType });
-        stream.getTracks().forEach(track => track.stop());
+        stream.getTracks().forEach(t => t.stop());
         await processVoiceInput(blob);
       };
 
       recorder.start();
       setState('listening');
-    } catch (err) {
-      console.error("Microphone error", err);
+
+      // Start silence detection for auto-stop
+      startSilenceDetection(stream, () => {
+        if (mediaRecorderRef.current?.state === 'recording') {
+          mediaRecorderRef.current.stop();
+          setState('thinking');
+        }
+      });
+
+    } catch {
       setState('idle');
     }
   };
 
   const stopRecording = () => {
-    if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+    stopSilenceDetection();
+    if (mediaRecorderRef.current?.state === 'recording') {
       mediaRecorderRef.current.stop();
       setState('thinking');
     }
   };
 
   const processVoiceInput = async (blob: Blob) => {
+    if (!conversationId) {
+      setState('idle');
+      return;
+    }
+
     try {
-      // Convert blob to base64
-      const reader = new FileReader();
-      reader.readAsDataURL(blob);
-      reader.onloadend = async () => {
-        const base64Audio = (reader.result as string).split(',')[1];
-        
-        if (!conversationId) {
-          console.warn("No conversation ID available.");
-          setState('idle');
-          return;
-        }
+      const base64Audio = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.readAsDataURL(blob);
+        reader.onloadend = () => resolve((reader.result as string).split(',')[1]);
+        reader.onerror = reject;
+      });
 
-        const res = await fetch(`/api/openai/conversations/${conversationId}/voice-messages`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ audio: base64Audio })
-        });
+      const res = await fetch(`/api/openai/conversations/${conversationId}/voice-messages`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ audio: base64Audio })
+      });
 
-        if (!res.ok) throw new Error('Voice message failed');
+      if (!res.ok) throw new Error('Voice failed');
 
-        setState('speaking');
-        let accumulatedText = "";
-        const msgId = Math.random().toString(36).substring(7);
+      setState('speaking');
+      let accumulatedText = "";
+      const msgId = crypto.randomUUID();
+      setMessages(prev => [...prev, { id: msgId, role: 'assistant', content: '' }]);
 
-        // Add a placeholder user message since the API handles STT but we might want to show it immediately.
-        // Actually, the API returns the transcript in the SSE. We'll capture both.
-        setMessages(prev => [...prev, { id: msgId + '-u', role: 'user', content: '...' }, { id: msgId, role: 'assistant', content: '' }]);
-
-        let userTranscript = "";
-
-        await parseSSE(res, 
-          (text) => {
-            // Very hacky check if it's user or assistant transcript based on format.
-            // Assuming the API sends assistant transcript. If it sends both, adjust logic.
-            accumulatedText += text;
-            setMessages(prev => prev.map(m => m.id === msgId ? { ...m, content: accumulatedText } : m));
-          },
-          (audio) => audioQueueRef.current.playChunk(audio),
-          () => setState('idle')
-        );
-      };
-    } catch (e) {
-      console.error(e);
+      await parseSSE(res,
+        (text) => {
+          accumulatedText += text;
+          setMessages(prev => prev.map(m => m.id === msgId ? { ...m, content: accumulatedText } : m));
+        },
+        (audio) => audioQueueRef.current.playChunk(audio),
+        () => setState('idle')
+      );
+    } catch {
       setState('idle');
     }
   };
 
   const toggleRecording = () => {
+    if (!isSessionActive) return;
     if (state === 'listening') {
       stopRecording();
-    } else {
+    } else if (state === 'idle' || state === 'speaking') {
       startRecording();
     }
   };
@@ -235,6 +288,8 @@ export function useAssistant() {
   return {
     state,
     messages,
-    toggleRecording
+    isSessionActive,
+    startSession,
+    toggleRecording,
   };
 }
