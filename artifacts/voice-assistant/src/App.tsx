@@ -2,7 +2,7 @@ import { Switch, Route, Router as WouterRouter } from "wouter";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import Landing from "@/pages/Landing";
 import Home from "@/pages/Home";
 import NotFound from "@/pages/not-found";
@@ -19,9 +19,15 @@ const queryClient = new QueryClient({
 type AppScreen = "landing" | "assistant";
 type AuthModalTab = "signin" | "signup";
 
-interface Conversation {
+export interface Conversation {
   id: number;
   title: string;
+  createdAt: string;
+}
+
+export interface Memory {
+  id: number;
+  text: string;
   createdAt: string;
 }
 
@@ -34,11 +40,21 @@ function AppContent() {
   });
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [conversations, setConversations] = useState<Conversation[]>([]);
-  const [activeConvId, setActiveConvId] = useState<number | null>(null);
+  const [memories, setMemories] = useState<Memory[]>([]);
+
+  // homeKey controls when Home remounts — only change on explicit user actions
+  const [homeKey, setHomeKey] = useState(0);
+  // The conversation passed INTO Home — null = create fresh; a number = load existing
+  const [homeConvId, setHomeConvId] = useState<number | null>(null);
+  // The highlighted conv in the sidebar (for UI state only)
+  const [sidebarActiveId, setSidebarActiveId] = useState<number | null>(null);
+
+  const hasRestoredSession = useRef(false);
 
   // Restore session on mount
   useEffect(() => {
-    if (!isLoading && user) {
+    if (!isLoading && user && !hasRestoredSession.current) {
+      hasRestoredSession.current = true;
       setScreen("assistant");
     }
   }, [isLoading, user]);
@@ -53,11 +69,22 @@ function AppContent() {
     } catch { /* ignore */ }
   }, []);
 
+  const fetchMemories = useCallback(async () => {
+    try {
+      const res = await fetch("/api/memories", { credentials: "include" });
+      if (res.ok) {
+        const data: Memory[] = await res.json();
+        setMemories(data);
+      }
+    } catch { /* ignore */ }
+  }, []);
+
   useEffect(() => {
     if (screen === "assistant") {
       fetchConversations();
+      fetchMemories();
     }
-  }, [screen, fetchConversations]);
+  }, [screen, fetchConversations, fetchMemories]);
 
   const handleAuthSuccess = useCallback(() => {
     setAuthModal({ open: false, tab: "signup" });
@@ -68,25 +95,35 @@ function AppContent() {
     await logout();
     setScreen("landing");
     setConversations([]);
-    setActiveConvId(null);
+    setMemories([]);
+    setSidebarActiveId(null);
+    setHomeConvId(null);
+    setHomeKey(k => k + 1);
   }, [logout]);
 
-  const handleNewConversation = useCallback(() => {
-    setActiveConvId(null);
-    setConversations(prev => prev);
-  }, []);
-
+  // Called when Home internally creates a conversation — just add to list, NO remount
   const handleConvCreated = useCallback((conv: Conversation) => {
     setConversations(prev => {
       const exists = prev.find(c => c.id === conv.id);
       if (exists) return prev;
       return [conv, ...prev];
     });
-    setActiveConvId(conv.id);
+    setSidebarActiveId(conv.id);
+    // Do NOT change homeKey — that would remount Home and cause a second greeting
   }, []);
 
+  // User explicitly selects a conversation from the sidebar → remount Home with that conv
   const handleSelectConv = useCallback((id: number) => {
-    setActiveConvId(id);
+    setSidebarActiveId(id);
+    setHomeConvId(id);
+    setHomeKey(k => k + 1);
+  }, []);
+
+  // User clicks "New conversation" in sidebar → remount Home fresh
+  const handleNewConversation = useCallback(() => {
+    setSidebarActiveId(null);
+    setHomeConvId(null);
+    setHomeKey(k => k + 1);
   }, []);
 
   const handleDeleteConv = useCallback(async (id: number) => {
@@ -96,11 +133,53 @@ function AppContent() {
         credentials: "include",
       });
       setConversations(prev => prev.filter(c => c.id !== id));
-      if (activeConvId === id) {
-        setActiveConvId(null);
+      if (sidebarActiveId === id) {
+        setSidebarActiveId(null);
+        setHomeConvId(null);
+        setHomeKey(k => k + 1);
       }
     } catch { /* ignore */ }
-  }, [activeConvId]);
+  }, [sidebarActiveId]);
+
+  const handleRenameConv = useCallback(async (id: number, title: string) => {
+    try {
+      const res = await fetch(`/api/openai/conversations/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ title }),
+      });
+      if (res.ok) {
+        const updated: Conversation = await res.json();
+        setConversations(prev => prev.map(c => c.id === updated.id ? updated : c));
+      }
+    } catch { /* ignore */ }
+  }, []);
+
+  const handleAddMemory = useCallback(async (text: string) => {
+    try {
+      const res = await fetch("/api/memories", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ text }),
+      });
+      if (res.ok) {
+        const mem: Memory = await res.json();
+        setMemories(prev => [...prev, mem]);
+      }
+    } catch { /* ignore */ }
+  }, []);
+
+  const handleDeleteMemory = useCallback(async (id: number) => {
+    try {
+      await fetch(`/api/memories/${id}`, {
+        method: "DELETE",
+        credentials: "include",
+      });
+      setMemories(prev => prev.filter(m => m.id !== id));
+    } catch { /* ignore */ }
+  }, []);
 
   if (isLoading) {
     return (
@@ -122,19 +201,21 @@ function AppContent() {
         {sidebarOpen && (
           <ConversationSidebar
             conversations={conversations}
-            activeConvId={activeConvId}
+            memories={memories}
+            activeConvId={sidebarActiveId}
             onSelect={handleSelectConv}
             onNew={handleNewConversation}
             onDelete={handleDeleteConv}
-            firstName={user.firstName}
-            onSignOut={handleSignOut}
+            onRename={handleRenameConv}
+            onAddMemory={handleAddMemory}
+            onDeleteMemory={handleDeleteMemory}
             onClose={() => setSidebarOpen(false)}
           />
         )}
         <Home
-          key={activeConvId ?? "new"}
+          key={homeKey}
           firstName={user.firstName}
-          conversationId={activeConvId}
+          conversationId={homeConvId}
           sidebarOpen={sidebarOpen}
           onOpenSidebar={() => setSidebarOpen(true)}
           onConvCreated={handleConvCreated}

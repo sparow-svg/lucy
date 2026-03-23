@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { db, conversations, messages } from "@workspace/db";
-import { eq, asc, desc } from "drizzle-orm";
+import { eq, asc, desc, count } from "drizzle-orm";
 
 const router: IRouter = Router();
 
@@ -26,18 +26,56 @@ router.get("/", async (req, res) => {
 router.post("/", async (req, res) => {
   try {
     const userId = getUserId(req);
-    const { title } = req.body;
-    if (!title) {
-      res.status(400).json({ error: "title is required" });
-      return;
+    let { title } = req.body;
+
+    if (!title?.trim()) {
+      if (userId) {
+        const [{ value: convCount }] = await db
+          .select({ value: count() })
+          .from(conversations)
+          .where(eq(conversations.userId, userId));
+        title = `Lucy Conversation ${Number(convCount) + 1}`;
+      } else {
+        const [{ value: convCount }] = await db
+          .select({ value: count() })
+          .from(conversations);
+        title = `Lucy Conversation ${Number(convCount) + 1}`;
+      }
     }
+
     const [conversation] = await db
       .insert(conversations)
-      .values({ title, userId })
+      .values({ title, userId: userId ?? undefined })
       .returning();
     res.status(201).json(conversation);
   } catch (err) {
     req.log.error({ err }, "Failed to create conversation");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.patch("/:id", async (req, res) => {
+  try {
+    const id = parseInt(req.params.id, 10);
+    const userId = getUserId(req);
+    const { title } = req.body;
+    if (!title?.trim()) { res.status(400).json({ error: "title is required" }); return; }
+
+    const [conv] = await db
+      .select()
+      .from(conversations)
+      .where(eq(conversations.id, id));
+    if (!conv) { res.status(404).json({ error: "Conversation not found" }); return; }
+    if (userId && conv.userId !== userId) { res.status(403).json({ error: "Forbidden" }); return; }
+
+    const [updated] = await db
+      .update(conversations)
+      .set({ title: title.trim() })
+      .where(eq(conversations.id, id))
+      .returning();
+    res.json(updated);
+  } catch (err) {
+    req.log.error({ err }, "Failed to update conversation");
     res.status(500).json({ error: "Internal server error" });
   }
 });

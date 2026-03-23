@@ -433,7 +433,7 @@ export function useAssistant(
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'include',
-      body: JSON.stringify({ title: 'Lucy session' }),
+      body: JSON.stringify({ title: '' }),
     })
       .then(r => r.json())
       .then(c => {

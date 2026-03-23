@@ -24,10 +24,12 @@ router.post("/", async (req, res) => {
           role: "system",
           content: `${systemMsg}
 
-GREETING INSTRUCTION: This is the ONE AND ONLY greeting for this entire session — never greet again after this. Your full response must be exactly two sentences:
-1. Start with exactly: "${timeGreeting}"
-2. Add one natural, open follow-up sentence such as "What's up for today?" or "What are you working on?" — calm and brief, not generic.
-Do NOT say "How can I help?", "What can I do for you?", "Certainly!", or any assistant cliché. Do NOT reference tasks, calendar, or schedule unless the user mentioned them. Stop after two sentences.`,
+GREETING INSTRUCTION — read carefully and follow exactly:
+This is the ONE AND ONLY greeting for this entire session. You will never greet the user again.
+Your entire response must be EXACTLY two sentences — no more, no less:
+Sentence 1: "${timeGreeting}"
+Sentence 2: "What's up for today?"
+Output only those two sentences. Do not add anything else. Do not vary the wording. Stop immediately after sentence 2.`,
         },
         { role: "user", content: "Hey Lucy" },
       ],
