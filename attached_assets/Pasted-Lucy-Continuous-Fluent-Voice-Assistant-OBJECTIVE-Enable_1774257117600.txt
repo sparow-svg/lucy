@@ -1,0 +1,53 @@
+Lucy — Continuous Fluent Voice Assistant
+
+OBJECTIVE:
+- Enable natural, ongoing conversation without clicks.
+- Wake-word triggers “Lucy” anywhere.
+- Streaming, interruptible TTS.
+- Context-aware conversation across multiple turns.
+- Orb and Safari-friendly, low CPU/GPU load.
+
+INSTRUCTIONS:
+
+1. Continuous Listening:
+- Keep microphone persistent once page loads.
+- Continuously listen for wake-word “Lucy”.
+- Once detected:
+    - Activate Lucy immediately.
+    - Start capturing user speech without any buttons.
+- Maintain active session window (e.g., 30–60 seconds) to allow multiple back-and-forth turns.
+
+2. Context Memory:
+- Preserve last N turns (user + Lucy) for ongoing conversation.
+- Avoid repeating responses.
+- Use context to generate human-like follow-ups.
+- Automatically reset context only after inactivity or session timeout.
+
+3. Streaming Responses:
+- Use partial TTS streaming so Lucy starts speaking immediately.
+- Stop speaking instantly if user begins talking (barge-in detection, 60ms polling).
+
+4. Orb Behavior:
+- Dormant: black (#1a1a1a)
+- Active (listening/thinking/speaking): Apple-blue (#0A84FF → #0051D5)
+- Orb updates every 60ms; liquid spring reacts to voice amplitude.
+- Reduce GPU-heavy shaders for Safari; pre-render noise textures if needed.
+
+5. Transcript Updates:
+- Memoize transcript; only update latest messages.
+- Avoid triggering orb re-render from transcript updates.
+- Optional: virtualize older messages to limit DOM load.
+
+6. Safari Optimization:
+- Ensure AudioContext is persistent; reuse AudioBuffers.
+- All heavy audio processing (STT, TTS, threshold detection) runs in Web Workers.
+- Partial streaming + micro-pauses to mask latency.
+- Throttle orb + DOM updates for stability.
+
+7. UX & Natural Interaction:
+- Include subtle fillers (“Hmm… okay”) during thinking/processing.
+- Maintain conversational tone; no hard-coded greetings or scripts.
+- Allow user to interrupt, continue, and follow up freely without any clicks.
+
+RESULT:
+Lucy becomes a fully **always-on, fluent conversational voice assistant**, responsive to wake-word, context-aware, and stable on Safari, with a visually responsive orb.

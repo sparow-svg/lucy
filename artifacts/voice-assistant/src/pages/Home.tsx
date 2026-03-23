@@ -4,7 +4,6 @@ import { Orb } from "@/components/Orb";
 import { Transcript } from "@/components/Transcript";
 import { motion, AnimatePresence } from "framer-motion";
 
-// Memoized transcript so audio chunks don't re-render the orb
 const MemoTranscript = memo(Transcript);
 
 export default function Home() {
@@ -17,17 +16,44 @@ export default function Home() {
     null;
 
   return (
-    <div className="min-h-screen w-full bg-white flex flex-col relative overflow-hidden">
+    <div className="min-h-screen w-full flex flex-col relative overflow-hidden">
 
-      {/* Header — fixed, no borders, no background */}
-      <header className="fixed top-0 left-0 right-0 z-50 flex items-center px-8 h-16">
+      {/* Full-screen background image — behind everything */}
+      <div
+        className="absolute inset-0 z-0"
+        style={{
+          backgroundImage: 'url(/bg-blue.png)',
+          backgroundSize: 'cover',
+          backgroundPosition: 'center',
+          backgroundRepeat: 'no-repeat',
+        }}
+      />
+
+      {/* Subtle dark vignette for depth + readability */}
+      <div
+        className="absolute inset-0 z-0 pointer-events-none"
+        style={{
+          background: 'radial-gradient(ellipse at center, rgba(0,20,60,0.18) 0%, rgba(0,10,40,0.45) 100%)',
+        }}
+      />
+
+      {/* Fixed header — frosted glass strip, no visible border */}
+      <header
+        className="fixed top-0 left-0 right-0 z-50 flex items-center px-8 h-16"
+        style={{
+          backdropFilter: 'blur(12px)',
+          WebkitBackdropFilter: 'blur(12px)',
+          background: 'rgba(0,30,80,0.15)',
+        }}
+      >
         <span
-          className="text-black select-none"
+          className="select-none"
           style={{
             fontSize: 17,
             fontWeight: 600,
             letterSpacing: '-0.03em',
             fontFamily: "'Inter', 'SF Pro Display', system-ui, sans-serif",
+            color: 'rgba(255,255,255,0.95)',
           }}
         >
           Lucy
@@ -35,8 +61,10 @@ export default function Home() {
       </header>
 
       {/* Main stage */}
-      <main className="flex-1 flex flex-col items-center justify-center" style={{ paddingTop: 64 }}>
-
+      <main
+        className="relative z-10 flex-1 flex flex-col items-center justify-center"
+        style={{ paddingTop: 64 }}
+      >
         <Orb
           state={state}
           onClick={toggleRecording}
@@ -57,8 +85,8 @@ export default function Home() {
                 className="select-none"
                 style={{
                   fontSize: 12,
-                  color: '#9CA3AF',
-                  letterSpacing: '0.05em',
+                  color: 'rgba(255,255,255,0.6)',
+                  letterSpacing: '0.06em',
                   fontFamily: "'Inter', system-ui, sans-serif",
                 }}
               >
@@ -69,7 +97,6 @@ export default function Home() {
         </div>
 
         <MemoTranscript messages={messages} />
-
       </main>
 
       {/* Footer */}
@@ -78,7 +105,7 @@ export default function Home() {
           className="select-none"
           style={{
             fontSize: 11,
-            color: '#D1D5DB',
+            color: 'rgba(255,255,255,0.35)',
             fontFamily: "'Inter', system-ui, sans-serif",
           }}
         >

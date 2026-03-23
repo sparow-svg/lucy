@@ -9,20 +9,20 @@ interface OrbProps {
   micVolume?: number;
 }
 
-// Black dormant → Apple blue when active
+// Blue across all states — dormant is a deep navy/royal blue, active is Apple blue
 const PAL: Record<AssistantState, {
   core: string; mid: string; deep: string;
   glow: string; ring: string; specular: string;
 }> = {
   dormant: {
-    core: '#303030', mid: '#1a1a1a', deep: '#0a0a0a',
-    glow: 'transparent', ring: 'rgba(255,255,255,0.04)',
-    specular: 'rgba(255,255,255,0.12)',
+    core: '#4facfe', mid: '#0A84FF', deep: '#0051D5',
+    glow: 'rgba(10,132,255,0.22)', ring: 'rgba(79,172,254,0.2)',
+    specular: 'rgba(255,255,255,0.45)',
   },
   idle: {
-    core: '#222226', mid: '#15151a', deep: '#080810',
-    glow: 'transparent', ring: 'rgba(255,255,255,0.03)',
-    specular: 'rgba(255,255,255,0.08)',
+    core: '#5bb8ff', mid: '#1a8fff', deep: '#0060e0',
+    glow: 'rgba(10,132,255,0.18)', ring: 'rgba(91,184,255,0.18)',
+    specular: 'rgba(255,255,255,0.4)',
   },
   listening: {
     core: '#64D2FF', mid: '#0A84FF', deep: '#0051D5',
