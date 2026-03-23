@@ -31,6 +31,14 @@ export interface Memory {
   createdAt: string;
 }
 
+export interface Nudge {
+  id: number;
+  text: string;
+  dueAt: string | null;
+  dismissed: boolean;
+  createdAt: string;
+}
+
 function AppContent() {
   const { user, isLoading, logout } = useAuth();
   const [screen, setScreen] = useState<AppScreen>("landing");
@@ -41,6 +49,7 @@ function AppContent() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [memories, setMemories] = useState<Memory[]>([]);
+  const [nudgesList, setNudgesList] = useState<Nudge[]>([]);
 
   // homeKey controls when Home remounts — only change on explicit user actions
   const [homeKey, setHomeKey] = useState(0);
@@ -79,12 +88,23 @@ function AppContent() {
     } catch { /* ignore */ }
   }, []);
 
+  const fetchNudges = useCallback(async () => {
+    try {
+      const res = await fetch("/api/nudges", { credentials: "include" });
+      if (res.ok) {
+        const data: Nudge[] = await res.json();
+        setNudgesList(data);
+      }
+    } catch { /* ignore */ }
+  }, []);
+
   useEffect(() => {
     if (screen === "assistant") {
       fetchConversations();
       fetchMemories();
+      fetchNudges();
     }
-  }, [screen, fetchConversations, fetchMemories]);
+  }, [screen, fetchConversations, fetchMemories, fetchNudges]);
 
   const handleAuthSuccess = useCallback(() => {
     setAuthModal({ open: false, tab: "signup" });
@@ -96,6 +116,7 @@ function AppContent() {
     setScreen("landing");
     setConversations([]);
     setMemories([]);
+    setNudgesList([]);
     setSidebarActiveId(null);
     setHomeConvId(null);
     setHomeKey(k => k + 1);
@@ -181,6 +202,31 @@ function AppContent() {
     } catch { /* ignore */ }
   }, []);
 
+  const handleAddNudge = useCallback(async (text: string, dueAt?: string) => {
+    try {
+      const res = await fetch("/api/nudges", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ text, dueAt: dueAt || undefined }),
+      });
+      if (res.ok) {
+        const nudge: Nudge = await res.json();
+        setNudgesList(prev => [...prev, nudge]);
+      }
+    } catch { /* ignore */ }
+  }, []);
+
+  const handleDismissNudge = useCallback(async (id: number) => {
+    try {
+      await fetch(`/api/nudges/${id}/dismiss`, {
+        method: "PATCH",
+        credentials: "include",
+      });
+      setNudgesList(prev => prev.filter(n => n.id !== id));
+    } catch { /* ignore */ }
+  }, []);
+
   if (isLoading) {
     return (
       <div style={{
@@ -202,6 +248,7 @@ function AppContent() {
           <ConversationSidebar
             conversations={conversations}
             memories={memories}
+            nudges={nudgesList}
             activeConvId={sidebarActiveId}
             onSelect={handleSelectConv}
             onNew={handleNewConversation}
@@ -209,6 +256,8 @@ function AppContent() {
             onRename={handleRenameConv}
             onAddMemory={handleAddMemory}
             onDeleteMemory={handleDeleteMemory}
+            onAddNudge={handleAddNudge}
+            onDismissNudge={handleDismissNudge}
             onClose={() => setSidebarOpen(false)}
           />
         )}

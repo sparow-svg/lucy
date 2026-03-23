@@ -1,0 +1,39 @@
+Objective: Implement next-phase features to move Lucy from a “nice-to-have” AI companion to a must-have personal assistant. Focus on proactive memory, nudges, reminders, sync suggestions, and desktop presence. 
+
+Features & Implementation:
+
+1️⃣ Proactive Memory & Suggestions
+- Inject Memory items into the system message.
+- Trigger proactive suggestions when keywords are detected (meeting, deadline, project, goal).
+- Example flows:
+  • User: “I have a meeting tomorrow.”
+  → Lucy adds to Memory and later prompts: “Remember your meeting tomorrow at 10am?”
+  • User: “I need to finish the report by Friday.”
+  → Lucy can follow up: “Are you making progress on the report?”
+- Memory panel shows example items upfront to clarify purpose.
+
+2️⃣ Nudges / Reminders
+- Rename “Reminders” to “Nudges” for user-friendly language.
+- User can set via voice: “Lucy, nudge me to call John at 3pm.”
+- Nudges stored per user, injected in conversation when due.
+- Desktop notifications optional for future phase.
+- Display active nudges in profile or tasks area, with ability to dismiss.
+
+3️⃣ Calendar & Email Sync
+- Detect mentions of calendar/email references.
+- Prompt user immediately to connect external accounts via OAuth.
+- Once synced, proactively notify: “You have an email from Alice regarding the report.”
+- Provide daily/weekly summaries from calendar.
+- Integration must be read-only initially for safety.
+
+4️⃣ Continuous Presence / Desktop App
+- Wrap web app in Electron/Tauri for Mac/Windows desktop.
+- Always visible as small widget in corner.
+- Listen for wake-word or provide quick voice/text input.
+- Show notifications for nudges and proactive memory items.
+
+5️⃣ Memory Guidance & UI
+- Show examples in Memory panel: “Lucy remembers…”
+  • Pre-filled items: “I need to submit the report by Friday.” / “My favorite coffee is black.” / “Project deadline is March 28.”
+- Tooltip or inline note: “Lucy can remember things you tell her — she’ll bring them up later to help you stay on track.”
+- Memory panel is collapsible, located below Conversations sidebar.

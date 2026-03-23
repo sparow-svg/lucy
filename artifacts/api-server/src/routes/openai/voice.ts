@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
-import { db, messages, conversations, tasks, memories } from "@workspace/db";
-import { eq, asc } from "drizzle-orm";
+import { db, messages, conversations, tasks, memories, nudges } from "@workspace/db";
+import { eq, asc, and } from "drizzle-orm";
 import { ensureCompatibleFormat } from "@workspace/integrations-openai-ai-server/audio";
 import { openai } from "@workspace/integrations-openai-ai-server";
 import { buildSystemMessage } from "../../data/mockData.js";
@@ -32,7 +32,28 @@ async function getUserContext(userId: number | null): Promise<string> {
       .orderBy(asc(memories.createdAt));
     if (userMemories.length) {
       const list = userMemories.map(m => `- ${m.text}`).join("\n");
-      extra += `\n\n--- LUCY REMEMBERS ---\n${list}\n(Use this context naturally when relevant. Do not recite the list.)`;
+      extra += `\n\n--- LUCY REMEMBERS ---\n${list}\n(Use this context naturally when relevant. Reference these only when contextually appropriate — do not list or recite them unprompted.)`;
+    }
+  } catch { /* ignore */ }
+  try {
+    const now = new Date();
+    const userNudges = await db
+      .select()
+      .from(nudges)
+      .where(
+        and(
+          eq(nudges.userId, userId),
+          eq(nudges.dismissed, false)
+        )
+      )
+      .orderBy(asc(nudges.createdAt));
+    const activeNudges = userNudges.filter(n => !n.dueAt || n.dueAt <= now);
+    if (activeNudges.length) {
+      const list = activeNudges.map(n => {
+        const dueStr = n.dueAt ? ` (due ${n.dueAt.toLocaleString("en-US", { timeZone: "UTC" })})` : "";
+        return `- ${n.text}${dueStr}`;
+      }).join("\n");
+      extra += `\n\n--- ACTIVE NUDGES ---\n${list}\n(Mention these nudges naturally when the moment is right — only once each, never repeat.)`;
     }
   } catch { /* ignore */ }
   return extra;
