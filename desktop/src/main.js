@@ -4,7 +4,7 @@ const path = require("path");
 // ── Configuration ─────────────────────────────────────────────────────────────
 // In production, point to your deployed Lucy URL.
 // In development, the local dev server URL is used.
-const LUCY_URL = process.env.LUCY_URL || "https://your-replit-app.replit.app/";
+const LUCY_URL = process.env.LUCY_URL || "https://lucy.replit.app/";
 const DEV_URL  = process.env.LUCY_DEV_URL || "http://localhost:5173/";
 const isDev    = process.env.NODE_ENV === "development" || !app.isPackaged;
 

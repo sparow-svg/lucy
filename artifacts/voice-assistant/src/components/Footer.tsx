@@ -64,10 +64,12 @@ export function Footer() {
           Get Lucy on your device:
         </span>
 
-        {/* Mac download button */}
+        {/* Mac download button — links to GitHub Releases */}
         <a
-          href="/lucy-desktop.dmg"
-          download
+          href="https://github.com/lucy-ai/lucy/releases/latest"
+          target="_blank"
+          rel="noopener noreferrer"
+          title="Download the latest Lucy desktop app for Mac"
           style={{
             display: "inline-flex",
             alignItems: "center",

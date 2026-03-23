@@ -80,9 +80,11 @@ artifacts-monorepo/
 - DB table: `connected_services` (id, userId, serviceName, connectedAt)
 - API: `GET /api/services` → list connected service names; `POST /api/services/:name/connect`; `DELETE /api/services/:name/disconnect`
 - Allowed services: `google`, `outlook`, `gmail`
-- Profile panel fetches real status from backend on each open — never reads localStorage
-- "Connect" button shown when not connected; "Disconnect" when confirmed from DB
-- "Coming soon" label removed; replaced with "Connect" or "X connected" badge
+- Profile panel → "Connected services" row opens `ServicesSection` sub-panel
+- ServicesSection shows Google Calendar + Gmail; each has Connect/Disconnect button
+- Status fetched fresh from backend each time profile panel opens
+- "Connected" shown in green only if DB confirms; "Disconnect" sends DELETE to DB
+- No "Coming soon" text; no fake status
 
 ### Activation Nudges (First-Time Onboarding)
 - `POST /api/nudges/onboard` — idempotent; checks if any nudge exists for user (incl. dismissed); if none, creates 3 personalized welcome nudges
@@ -91,9 +93,14 @@ artifacts-monorepo/
 
 ### Desktop App (Electron)
 - Located in `desktop/`
-- Loads deployed Lucy web app URL (or local dev server)
+- Loads deployed Lucy URL (`LUCY_URL` env var, defaults to `https://lucy.replit.app/`)
+- In dev mode: loads `LUCY_DEV_URL` or `http://localhost:5173/`
 - Native macOS titlebar + vibrancy, Windows NSIS installer
-- Mic permission auto-granted
+- Mic permission auto-granted via `setPermissionRequestHandler`
+- OS notifications for nudges via IPC (`lucy:nudge` event)
+- Build: Mac .dmg and Windows .exe require macOS/Windows build environments respectively
+- GitHub Actions workflow at `.github/workflows/desktop-release.yml` builds .dmg on macOS runner and .exe on Windows runner; triggered on git tag push (`v*`) or manual dispatch
+- Footer "Download for Mac" links to GitHub Releases page
 - `window.lucyDesktop.sendNudge(title, body)` → native OS notification
 - Build: `npm run build:mac` / `npm run build:win`
 

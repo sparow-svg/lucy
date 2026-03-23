@@ -2,7 +2,7 @@ import { useAssistant } from "@/hooks/use-assistant";
 import type { ChatMessage } from "@/hooks/use-assistant";
 import { Orb } from "@/components/Orb";
 import { motion, AnimatePresence } from "framer-motion";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 
 const THINKING_FILLERS = ["Hmm…", "Got it…", "Right…", "Let me think…", "Sure…"];
 
@@ -60,12 +60,58 @@ export default function Home({
 
   // Profile panel
   const [showProfile, setShowProfile] = useState(false);
+  const [profileSection, setProfileSection] = useState<'main' | 'services'>('main');
+
+  // Connected services — fetched from backend, never stored in localStorage
+  const [connected, setConnected] = useState<Record<string, boolean>>({});
+  const [servicesLoading, setServicesLoading] = useState(false);
+  const [connecting, setConnecting] = useState<string | null>(null);
 
   useEffect(() => {
     if (state !== 'thinking') return;
     const iv = setInterval(() => setFillerIdx(i => (i + 1) % THINKING_FILLERS.length), 1800);
     return () => clearInterval(iv);
   }, [state]);
+
+  // Fetch real connection status from backend
+  const fetchServices = useCallback(async () => {
+    setServicesLoading(true);
+    try {
+      const res = await fetch("/api/services", { credentials: "include" });
+      if (res.ok) {
+        const names: string[] = await res.json();
+        const map: Record<string, boolean> = {};
+        names.forEach(n => { map[n] = true; });
+        setConnected(map);
+      }
+    } catch { /* ignore */ }
+    finally { setServicesLoading(false); }
+  }, []);
+
+  // Fetch services when profile panel opens
+  useEffect(() => {
+    if (showProfile) fetchServices();
+  }, [showProfile, fetchServices]);
+
+  const handleConnect = async (id: string) => {
+    setConnecting(id);
+    try {
+      const res = await fetch(`/api/services/${id}/connect`, {
+        method: "POST", credentials: "include",
+      });
+      if (res.ok) setConnected(prev => ({ ...prev, [id]: true }));
+    } catch { /* ignore */ }
+    finally { setConnecting(null); }
+  };
+
+  const handleDisconnect = async (id: string) => {
+    try {
+      await fetch(`/api/services/${id}/disconnect`, {
+        method: "DELETE", credentials: "include",
+      });
+      setConnected(prev => { const next = { ...prev }; delete next[id]; return next; });
+    } catch { /* ignore */ }
+  };
 
   const statusLabel =
     isPaused            ? 'Say "Lucy" to continue' :
@@ -139,7 +185,7 @@ export default function Home({
         {firstName && firstName !== "there" && (
           <div style={{ position: "relative" }}>
             <button
-              onClick={() => setShowProfile(s => !s)}
+              onClick={() => { setShowProfile(s => !s); setProfileSection('main'); }}
               style={{
                 background: "none", border: "none", cursor: "pointer",
                 padding: "4px 10px",
@@ -180,12 +226,25 @@ export default function Home({
                       boxShadow: "0 8px 32px rgba(0,0,0,0.14)",
                     }}
                   >
-                    <ProfileMain
-                      firstName={firstName}
-                      nudges={nudges}
-                      onDismissNudge={(id) => onDismissNudge?.(id)}
-                      onSignOut={() => { setShowProfile(false); onSignOut?.(); }}
-                    />
+                    {profileSection === 'main' ? (
+                      <ProfileMain
+                        firstName={firstName}
+                        connected={connected}
+                        nudges={nudges}
+                        onOpenServices={() => setProfileSection('services')}
+                        onDismissNudge={(id) => onDismissNudge?.(id)}
+                        onSignOut={() => { setShowProfile(false); onSignOut?.(); }}
+                      />
+                    ) : (
+                      <ServicesSection
+                        connected={connected}
+                        connecting={connecting}
+                        loading={servicesLoading}
+                        onConnect={handleConnect}
+                        onDisconnect={handleDisconnect}
+                        onBack={() => setProfileSection('main')}
+                      />
+                    )}
                   </motion.div>
                 </>
               )}
@@ -371,15 +430,20 @@ function SummaryPanel({ messages }: { messages: ChatMessage[] }) {
 // ── Profile panel — main view ────────────────────────────────────────────────
 function ProfileMain({
   firstName,
+  connected,
   nudges,
+  onOpenServices,
   onDismissNudge,
   onSignOut,
 }: {
   firstName: string;
+  connected: Record<string, boolean>;
   nudges: Array<{ id: number; text: string; dueAt: string | null }>;
+  onOpenServices: () => void;
   onDismissNudge: (id: number) => void;
   onSignOut: () => void;
 }) {
+  const connectedCount = Object.values(connected).filter(Boolean).length;
   const [hoveredNudge, setHoveredNudge] = useState<number | null>(null);
 
   return (
@@ -473,6 +537,42 @@ function ProfileMain({
         </div>
       )}
 
+      {/* Connected services row */}
+      <button
+        onClick={onOpenServices}
+        style={{
+          width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between",
+          padding: "11px 16px", background: "none", border: "none", cursor: "pointer",
+          borderBottom: "1px solid #f0f0f0",
+        }}
+        onMouseEnter={e => (e.currentTarget.style.backgroundColor = "#f8f8f8")}
+        onMouseLeave={e => (e.currentTarget.style.backgroundColor = "transparent")}
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+            <rect x="1.5" y="2" width="13" height="12" rx="2" stroke="#888" strokeWidth="1.3"/>
+            <path d="M5 1V3.5M11 1V3.5M1.5 6H14.5" stroke="#888" strokeWidth="1.3" strokeLinecap="round"/>
+          </svg>
+          <span style={{ fontSize: 13, color: "#333", fontFamily: "'Inter', system-ui, sans-serif" }}>
+            Connected services
+          </span>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          {connectedCount > 0 && (
+            <span style={{
+              fontSize: 11, color: "#fff", backgroundColor: "#0A84FF",
+              borderRadius: 10, padding: "1px 7px",
+              fontFamily: "'Inter', system-ui, sans-serif",
+            }}>
+              {connectedCount} connected
+            </span>
+          )}
+          <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
+            <path d="M3 2L7 5L3 8" stroke="#bbb" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
+          </svg>
+        </div>
+      </button>
+
       {/* Sign out */}
       <button
         onClick={onSignOut}
@@ -486,6 +586,130 @@ function ProfileMain({
       >
         Sign out
       </button>
+    </div>
+  );
+}
+
+// ── Profile panel — connected services section ───────────────────────────────
+const SERVICES = [
+  {
+    id: 'google',
+    label: 'Google Calendar',
+    sublabel: 'Schedule & events',
+    icon: (
+      <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+        <rect x="2" y="3" width="16" height="15" rx="2.5" fill="#4285F4" opacity="0.12"/>
+        <rect x="2" y="3" width="16" height="15" rx="2.5" stroke="#4285F4" strokeWidth="1.2"/>
+        <path d="M7 2V5M13 2V5M2 8H18" stroke="#4285F4" strokeWidth="1.3" strokeLinecap="round"/>
+        <text x="10" y="15.5" textAnchor="middle" fontSize="6.5" fill="#4285F4" fontWeight="700">31</text>
+      </svg>
+    ),
+  },
+  {
+    id: 'gmail',
+    label: 'Gmail',
+    sublabel: 'Emails & threads',
+    icon: (
+      <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+        <rect x="2" y="4" width="16" height="13" rx="2" fill="#EA4335" opacity="0.1"/>
+        <rect x="2" y="4" width="16" height="13" rx="2" stroke="#EA4335" strokeWidth="1.2"/>
+        <path d="M2 6.5L10 11.5L18 6.5" stroke="#EA4335" strokeWidth="1.3" strokeLinecap="round"/>
+      </svg>
+    ),
+  },
+] as const;
+
+function ServicesSection({
+  connected, connecting, loading, onConnect, onDisconnect, onBack,
+}: {
+  connected: Record<string, boolean>;
+  connecting: string | null;
+  loading?: boolean;
+  onConnect: (id: string) => void;
+  onDisconnect: (id: string) => void;
+  onBack: () => void;
+}) {
+  return (
+    <div>
+      <div style={{
+        display: "flex", alignItems: "center", gap: 8,
+        padding: "12px 16px", borderBottom: "1px solid #f0f0f0",
+      }}>
+        <button
+          onClick={onBack}
+          style={{ background: "none", border: "none", cursor: "pointer", padding: 4, display: "flex", alignItems: "center", color: "#aaa", borderRadius: 4 }}
+          onMouseEnter={e => ((e.currentTarget as HTMLButtonElement).style.color = "#333")}
+          onMouseLeave={e => ((e.currentTarget as HTMLButtonElement).style.color = "#aaa")}
+        >
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+            <path d="M9 2L4 7L9 12" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+          </svg>
+        </button>
+        <span style={{ fontSize: 13, fontWeight: 600, color: "#111", fontFamily: "'Inter', system-ui, sans-serif" }}>
+          Connected services
+        </span>
+      </div>
+
+      {loading ? (
+        <p style={{ margin: "14px 16px", fontSize: 12, color: "#bbb", fontFamily: "'Inter', system-ui, sans-serif" }}>
+          Checking connection status…
+        </p>
+      ) : (
+        <div style={{ padding: "6px 0" }}>
+          {SERVICES.map(svc => {
+            const isConnected = !!connected[svc.id];
+            const isConnecting = connecting === svc.id;
+            return (
+              <div
+                key={svc.id}
+                style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 16px" }}
+              >
+                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  {svc.icon}
+                  <div>
+                    <p style={{ margin: 0, fontSize: 13, color: "#222", fontFamily: "'Inter', system-ui, sans-serif", fontWeight: 500 }}>
+                      {svc.label}
+                    </p>
+                    <p style={{ margin: 0, fontSize: 11, color: isConnected ? "#22c55e" : "#aaa", fontFamily: "'Inter', system-ui, sans-serif" }}>
+                      {isConnected ? "Connected" : svc.sublabel}
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => isConnected ? onDisconnect(svc.id) : onConnect(svc.id)}
+                  disabled={isConnecting}
+                  style={{
+                    fontSize: 12, fontWeight: 600,
+                    fontFamily: "'Inter', system-ui, sans-serif",
+                    padding: "5px 12px", borderRadius: 9999,
+                    border: isConnected ? "1.5px solid #e0e0e0" : "none",
+                    cursor: isConnecting ? "wait" : "pointer",
+                    color: isConnected ? "#888" : "#fff",
+                    backgroundColor: isConnecting ? "#bbb" : isConnected ? "transparent" : "#0A84FF",
+                    transition: "all 0.15s",
+                  }}
+                  onMouseEnter={e => {
+                    if (!isConnecting && !isConnected)
+                      (e.currentTarget as HTMLButtonElement).style.backgroundColor = "#0071EB";
+                  }}
+                  onMouseLeave={e => {
+                    if (!isConnecting && !isConnected)
+                      (e.currentTarget as HTMLButtonElement).style.backgroundColor = "#0A84FF";
+                  }}
+                >
+                  {isConnecting ? "Connecting…" : isConnected ? "Disconnect" : "Connect"}
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      <div style={{ padding: "4px 16px 14px" }}>
+        <p style={{ margin: 0, fontSize: 11, color: "#bbb", lineHeight: 1.5, fontFamily: "'Inter', system-ui, sans-serif" }}>
+          Once connected, Lucy can reference your calendar and emails naturally in conversation.
+        </p>
+      </div>
     </div>
   );
 }
