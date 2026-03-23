@@ -10,23 +10,27 @@ export interface ChatMessage {
 }
 
 // ── Tunable constants ───────────────────────────────────────────────────────
-const SILENCE_THRESHOLD  = 0.009;  // rms below = silence detected
-const BARGE_IN_THRESHOLD = 0.022;  // rms above = user speaks while Lucy plays
-const SPEECH_THRESHOLD   = 0.011;  // rms above = user voice (for auto-pause tracking)
-const SILENCE_MS         = 800;    // hold silence this long before stopping recording
-const MAX_RECORD_MS      = 10_000; // hard cutoff: never record longer than 10s
-const MIN_BLOB_BYTES     = 400;    // below this = empty/header-only blob, skip API call
+const SILENCE_THRESHOLD  = 0.009;
+const BARGE_IN_THRESHOLD = 0.022;
+const SPEECH_THRESHOLD   = 0.011;
+const SILENCE_MS         = 800;
+const MAX_RECORD_MS      = 10_000;
+const MIN_BLOB_BYTES     = 400;
 const POLL_MS            = 60;
 const MAX_MSGS           = 8;
 const SESSION_TIMEOUT_MS = 45_000;
 const AUTO_PAUSE_MS      = 10_000;
 
-export function useAssistant() {
+export function useAssistant(firstName = "there") {
   const [state, setState]           = useState<AssistantState>('dormant');
   const [messages, setMessages]     = useState<ChatMessage[]>([]);
   const [micVolume, setMicVolume]   = useState(0);
   const [isSessionActive, setIsSessionActive] = useState(false);
   const [isPaused, setIsPaused]     = useState(false);
+
+  // Keep firstName in a ref so API calls always have the latest value
+  const firstNameRef = useRef(firstName);
+  useEffect(() => { firstNameRef.current = firstName; }, [firstName]);
 
   // ── Refs ──────────────────────────────────────────────────────────────────
   const stateRef         = useRef<AssistantState>('dormant');
@@ -40,7 +44,7 @@ export function useAssistant() {
   const sharedCtx        = useRef<AudioContext | null>(null);
   const pollTimer        = useRef<ReturnType<typeof setInterval> | null>(null);
   const silenceStart     = useRef<number | null>(null);
-  const recordStart      = useRef<number>(0);  // for MAX_RECORD_MS
+  const recordStart      = useRef<number>(0);
   const lastUserSpeechMs = useRef(0);
   const lastPauseCheckMs = useRef(0);
   const hasInit          = useRef(false);
@@ -50,7 +54,6 @@ export function useAssistant() {
   const isSessionRef     = useRef(false);
   const abortCtrl        = useRef<AbortController | null>(null);
   const sessionTimeout   = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // Callback refs — always latest, no stale closures
   const wakeWordStartRef    = useRef<(() => void) | null>(null);
   const resumeSessionRef    = useRef<(() => void) | null>(null);
   const doStartListeningRef = useRef<(() => void) | null>(null);
@@ -61,7 +64,6 @@ export function useAssistant() {
     setState(s);
   };
 
-  // ── Low-level helpers ─────────────────────────────────────────────────────
   const stopAudioAndSTT = () => {
     queue.current.stop();
     if (abortCtrl.current) { abortCtrl.current.abort(); abortCtrl.current = null; }
@@ -77,7 +79,6 @@ export function useAssistant() {
     sessionTimeout.current = setTimeout(() => endSession(), SESSION_TIMEOUT_MS);
   };
 
-  // ── End session ───────────────────────────────────────────────────────────
   const endSession = () => {
     stopAudioAndSTT();
     isPausedRef.current  = false;
@@ -93,7 +94,6 @@ export function useAssistant() {
     setTimeout(() => wakeWordStartRef.current?.(), 600);
   };
 
-  // ── Pause ─────────────────────────────────────────────────────────────────
   const pauseSession = useCallback(() => {
     stopAudioAndSTT();
     isPausedRef.current  = true;
@@ -104,7 +104,6 @@ export function useAssistant() {
     setTimeout(() => wakeWordStartRef.current?.(), 400);
   }, []);
 
-  // ── Resume ────────────────────────────────────────────────────────────────
   const resumeSession = () => {
     if (!isSessionRef.current) return;
     isPausedRef.current  = false;
@@ -116,7 +115,6 @@ export function useAssistant() {
   };
   resumeSessionRef.current = resumeSession;
 
-  // ── SSE reader ────────────────────────────────────────────────────────────
   const readSSE = async (
     res: Response,
     onText: (t: string) => void,
@@ -157,7 +155,6 @@ export function useAssistant() {
   const patchMsg = (id: string, content: string) =>
     setMessages(prev => prev.map(m => m.id === id ? { ...m, content } : m));
 
-  // ── Open mic (once per session lifecycle) ─────────────────────────────────
   const openMic = async () => {
     if (micStream.current) return;
     try {
@@ -176,7 +173,6 @@ export function useAssistant() {
     } catch { /* mic denied */ }
   };
 
-  // ── Volume poll ───────────────────────────────────────────────────────────
   const startPoll = () => {
     if (pollTimer.current) return;
     const data = new Uint8Array(analyser.current?.frequencyBinCount ?? 128);
@@ -196,14 +192,12 @@ export function useAssistant() {
       const s   = stateRef.current;
       const now = Date.now();
 
-      // Track user voice for auto-pause
       if (rms > SPEECH_THRESHOLD && isSessionRef.current) {
         lastUserSpeechMs.current = now;
       }
 
-      // ── Auto-pause (checked once per second) ────────────────────────────
       if (now - lastPauseCheckMs.current > 1_000) {
-        lastPauseCheckMs.current = now; // update before checking, prevents re-entry
+        lastPauseCheckMs.current = now;
         if (
           isSessionRef.current &&
           !isPausedRef.current &&
@@ -219,7 +213,6 @@ export function useAssistant() {
 
       if (isPausedRef.current) return;
 
-      // ── Barge-in: cut Lucy off, start listening immediately ─────────────
       if (s === 'speaking' && rms > BARGE_IN_THRESHOLD && !isProcessing.current) {
         queue.current.stop();
         if (abortCtrl.current) { abortCtrl.current.abort(); abortCtrl.current = null; }
@@ -229,9 +222,7 @@ export function useAssistant() {
         return;
       }
 
-      // ── Silence detection → stop recording ──────────────────────────────
       if (s === 'listening') {
-        // Hard cutoff: never record more than MAX_RECORD_MS
         if (recordStart.current > 0 && now - recordStart.current > MAX_RECORD_MS) {
           silenceStart.current = null;
           doStopListeningRef.current?.();
@@ -255,7 +246,6 @@ export function useAssistant() {
     setMicVolume(0);
   };
 
-  // ── Start listening ────────────────────────────────────────────────────────
   const doStartListening = useCallback(() => {
     if (!micStream.current || isProcessing.current || isPausedRef.current) return;
     const s = stateRef.current;
@@ -277,10 +267,9 @@ export function useAssistant() {
     } catch {
       setStateSafe('idle');
     }
-  }, []); // stable ref only
+  }, []);
   doStartListeningRef.current = doStartListening;
 
-  // ── Stop listening ────────────────────────────────────────────────────────
   const doStopListening = useCallback(() => {
     silenceStart.current = null;
     recordStart.current  = 0;
@@ -291,24 +280,17 @@ export function useAssistant() {
   }, []);
   doStopListeningRef.current = doStopListening;
 
-  // ── Process voice → API → TTS ─────────────────────────────────────────────
   const doProcessVoice = useCallback(async (blob: Blob) => {
-    // ── Guard: skip truly empty blobs (no speech captured) ─────────────────
-    // MIN_BLOB_BYTES guards against silent recordings; much lower than before
-    // to allow brief utterances through compressed formats (webm/opus)
     if (blob.size < MIN_BLOB_BYTES) {
       setStateSafe('idle');
-      // Loop continues — don't leave user stranded
       setTimeout(() => doStartListeningRef.current?.(), 80);
       return;
     }
-
     if (isProcessing.current || isPausedRef.current) return;
     if (!convId.current) { setStateSafe('idle'); return; }
 
     isProcessing.current = true;
     armSessionTimer();
-
     const ctx = sharedCtx.current;
     if (ctx?.state === 'suspended') { try { await ctx.resume(); } catch { /* ignore */ } }
 
@@ -330,13 +312,12 @@ export function useAssistant() {
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ audio: base64 }),
+          body: JSON.stringify({ audio: base64, firstName: firstNameRef.current }),
           signal: ctrl.signal,
         }
       );
 
       if (!resp.ok) {
-        // Non-retryable API error — go back to listening immediately
         console.warn('[Lucy] voice API error:', resp.status);
         throw new Error(`voice ${resp.status}`);
       }
@@ -355,12 +336,7 @@ export function useAssistant() {
     } catch (err) {
       const isAbort = (err as Error)?.name === 'AbortError';
       if (!isAbort) console.error('[Lucy] voice error:', err);
-
       if (!isPausedRef.current) {
-        // ── Bug fix: directly restart listening after error ─────────────────
-        // Previously we only set state='idle', which the speaking→idle loop
-        // would NOT pick up (that loop only watches for 'speaking' state).
-        // Now we explicitly re-arm listening so the conversation continues.
         setStateSafe('idle');
         if (!isAbort) {
           setTimeout(() => {
@@ -376,27 +352,19 @@ export function useAssistant() {
     }
   }, []);
 
-  // ── Speaking → idle → listen loop ────────────────────────────────────────
-  // Bug fix: gate on !isProcessing.current to prevent race condition where
-  // state='speaking' but audio queue hasn't received its first chunk yet
-  // (tiny window between setStateSafe('speaking') and first playChunk call).
+  // Speaking → idle → listen loop (gated on !isProcessing to prevent race condition)
   useEffect(() => {
     const iv = setInterval(() => {
       if (
         stateRef.current === 'speaking' &&
         !queue.current.isPlaying &&
-        !isProcessing.current  // ← key fix: only transition AFTER API call completes
+        !isProcessing.current
       ) {
         setStateSafe('idle');
         if (isSessionRef.current) lastUserSpeechMs.current = Date.now();
-
         if (isSessionRef.current && !isPausedRef.current) {
           setTimeout(() => {
-            if (
-              stateRef.current === 'idle' &&
-              !isProcessing.current &&
-              !isPausedRef.current
-            ) {
+            if (stateRef.current === 'idle' && !isProcessing.current && !isPausedRef.current) {
               doStartListening();
             }
           }, 120);
@@ -406,7 +374,6 @@ export function useAssistant() {
     return () => clearInterval(iv);
   }, [doStartListening]);
 
-  // ── Greeting ──────────────────────────────────────────────────────────────
   const doGreet = useCallback(async () => {
     if (hasGreeted.current) return;
     hasGreeted.current = true;
@@ -421,7 +388,7 @@ export function useAssistant() {
       const resp = await fetch('/api/openai/proactive-greeting', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({}),
+        body: JSON.stringify({ firstName: firstNameRef.current }),
         signal: ctrl.signal,
       });
       if (!resp.ok) throw new Error('greeting failed');
@@ -436,14 +403,12 @@ export function useAssistant() {
       );
     } catch {
       setStateSafe('idle');
-      // If greeting fails, start listening anyway
       setTimeout(() => doStartListeningRef.current?.(), 300);
     } finally {
       abortCtrl.current = null;
     }
   }, []);
 
-  // ── Pre-create conversation ───────────────────────────────────────────────
   useEffect(() => {
     if (hasInit.current) return;
     hasInit.current = true;
@@ -454,7 +419,7 @@ export function useAssistant() {
     }).then(r => r.json()).then(c => { convId.current = c.id; }).catch(() => {});
   }, []);
 
-  // ── Wake-word via SpeechRecognition ───────────────────────────────────────
+  // Wake-word detection
   useEffect(() => {
     const SRClass =
       (window as any).SpeechRecognition ||
@@ -469,7 +434,7 @@ export function useAssistant() {
       if (isActivated.current && !isPausedRef.current) return;
       try {
         recognition = new SRClass();
-        recognition.continuous     = false; // Safari-safe: manual onend restart
+        recognition.continuous     = false;
         recognition.interimResults = true;
         recognition.lang            = 'en-US';
         recognition.maxAlternatives = 1;
@@ -479,7 +444,6 @@ export function useAssistant() {
             const t = e.results[i][0].transcript.toLowerCase().trim();
             if (t.includes('lucy') || t.includes('luci')) {
               recognition?.abort();
-
               if (isPausedRef.current && isSessionRef.current) {
                 isActivated.current = true;
                 resumeSessionRef.current?.();
@@ -520,7 +484,6 @@ export function useAssistant() {
     };
   }, [doGreet]);
 
-  // ── Orb tap: pause ↔ resume ───────────────────────────────────────────────
   const toggleRecording = useCallback(() => {
     if (isPausedRef.current) {
       resumeSessionRef.current?.();
@@ -529,7 +492,6 @@ export function useAssistant() {
     }
   }, [pauseSession]);
 
-  // ── Cleanup ───────────────────────────────────────────────────────────────
   useEffect(() => {
     return () => {
       stopPoll();

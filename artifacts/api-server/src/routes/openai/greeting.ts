@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { openai } from "@workspace/integrations-openai-ai-server";
-import { buildSystemMessage, buildRuntimeContext, USER_PROFILE } from "../../data/mockData.js";
+import { buildSystemMessage, getTimeGreeting } from "../../data/mockData.js";
 
 const router: IRouter = Router();
 
@@ -11,15 +11,9 @@ router.post("/", async (req, res) => {
   res.flushHeaders();
 
   try {
-    // Determine time-of-day greeting
-    const hour = new Date().getUTCHours();
-    const timeGreeting =
-      hour >= 5 && hour < 12  ? `Good morning, ${USER_PROFILE.firstName}!` :
-      hour >= 12 && hour < 17 ? `Good afternoon, ${USER_PROFILE.firstName}!` :
-      hour >= 17 && hour < 21 ? `Good evening, ${USER_PROFILE.firstName}!` :
-                                `Hey, ${USER_PROFILE.firstName}!`;
-
-    const systemMsg = buildSystemMessage();
+    const firstName: string = (req.body?.firstName as string) || "there";
+    const timeGreeting = getTimeGreeting(firstName);
+    const systemMsg = buildSystemMessage(firstName);
 
     const stream = await openai.chat.completions.create({
       model: "gpt-audio",
@@ -30,9 +24,9 @@ router.post("/", async (req, res) => {
           role: "system",
           content: `${systemMsg}
 
-GREETING INSTRUCTION: ${USER_PROFILE.firstName} just activated you by saying your name. Open with "${timeGreeting}" then add one short, natural sentence that invites them to talk — like a warm colleague who just looked up from their desk. Do not reference schedules or tasks unless you have data about them. Do not say anything generic like "How can I help?" — keep it personal and brief.`,
+GREETING INSTRUCTION: ${firstName} just activated you by saying your name. Open with "${timeGreeting}" then add one short, natural sentence that invites them to talk — like a warm colleague who just looked up from their desk. Keep it to two sentences maximum. Do not reference schedules or tasks. Do not say generic things like "How can I help?" — keep it personal and brief.`,
         },
-        { role: "user", content: `Hey Lucy` },
+        { role: "user", content: "Hey Lucy" },
       ],
       stream: true,
     });

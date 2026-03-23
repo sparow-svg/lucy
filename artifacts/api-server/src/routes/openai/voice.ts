@@ -22,7 +22,7 @@ router.post("/:id/voice-messages", async (req, res) => {
       return;
     }
 
-    const { audio } = req.body;
+    const { audio, firstName } = req.body;
     if (!audio) {
       res.status(400).json({ error: "audio is required" });
       return;
@@ -54,8 +54,7 @@ router.post("/:id/voice-messages", async (req, res) => {
     let userTranscript = "";
     let assistantTranscript = "";
 
-    // Fresh system message on every turn — includes current date/time
-    const systemMsg = buildSystemMessage();
+    const systemMsg = buildSystemMessage(firstName as string | undefined);
 
     const stream = await openai.chat.completions.create({
       model: "gpt-audio",
@@ -129,7 +128,7 @@ router.post("/:id/messages", async (req, res) => {
       return;
     }
 
-    const { content } = req.body;
+    const { content, firstName } = req.body;
     if (!content) {
       res.status(400).json({ error: "content is required" });
       return;
@@ -155,8 +154,7 @@ router.post("/:id/messages", async (req, res) => {
     res.flushHeaders();
 
     let fullResponse = "";
-
-    const systemMsg = buildSystemMessage();
+    const systemMsg = buildSystemMessage(firstName as string | undefined);
 
     const stream = await openai.chat.completions.create({
       model: "gpt-5-mini",

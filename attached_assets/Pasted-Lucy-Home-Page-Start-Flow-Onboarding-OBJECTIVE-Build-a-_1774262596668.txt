@@ -1,0 +1,47 @@
+Lucy — Home Page & Start Flow (Onboarding)
+
+OBJECTIVE:
+- Build a landing/home page for Lucy where a new user can start interacting.
+- Assume free access for now (no paywall yet), but user should sign up or provide a name to personalize experience.
+
+REQUIREMENTS:
+
+1️⃣ **Home Page Layout**
+- Clean, minimal interface consistent with LUCY brand:
+  - White background
+  - Header: "LUCY" logo top-left
+  - Optional tagline below: "Your voice-first AI assistant"
+  - Center stage: interactive orb (or placeholder until session starts)
+- Footer: small text with links (Privacy, Terms, Contact)
+- Responsive design: works on desktop and mobile
+
+2️⃣ **Start / Onboarding Button**
+- Prominent button near center or top-right: "Start" / "Sign Up"
+- Clicking opens onboarding flow:
+  - Ask for **first name** (used for greetings)
+  - Optionally connect **calendar/tasks** (can skip for now)
+  - Confirm user is ready to start
+- After onboarding, button disappears, orb becomes active, session starts automatically
+
+3️⃣ **Voice Interaction Initialization**
+- Mic access requested once onboarding is complete
+- Session starts only after user consent
+- Enable wake-word: “Lucy” triggers first greeting
+- Orb reacts to voice states (dormant → listening → thinking → speaking)
+
+4️⃣ **First Session**
+- Greeting: “Good morning, [first name]! What’s up for this [day of week] morning?”
+- Voice session continues **multi-turn** with 10-turn memory
+- Auto-pause after 10–15s of silence: display “Say ‘Lucy’ to continue”
+
+5️⃣ **Visual / Orb Considerations**
+- Orb centered on pupil of background eye image
+- Responsive scaling for desktop and mobile
+- Visual states: dormant, listening, thinking, speaking
+- Micro-interactions: subtle breathing pulse, glowing rings during speaking
+
+6️⃣ **Extra Notes**
+- All greetings/interactions personalized using first name
+- No hard-coded greetings for future sessions — first session only
+- Interface lightweight and Safari-compatible
+- Transcript or conversation appears below orb without moving the pupil

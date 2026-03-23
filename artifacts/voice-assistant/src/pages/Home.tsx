@@ -31,13 +31,16 @@ function useBlink() {
   return phase;
 }
 
-// Orb sphere diameter = SIZE(80), container = SIZE+40 = 120 → half = 60
-// Status label sits: screen center + 60px (half container) + 10px gap = +70px
+interface HomeProps {
+  firstName?: string;
+}
+
 const STATUS_TOP  = 'calc(50vh + 70px)';
 const STATUS_FONT = 10;
 
-export default function Home() {
-  const { state, messages, micVolume, isSessionActive, isPaused, toggleRecording } = useAssistant();
+export default function Home({ firstName = "there" }: HomeProps) {
+  const { state, messages, micVolume, isSessionActive, isPaused, toggleRecording } =
+    useAssistant(firstName);
   const [fillerIdx, setFillerIdx] = useState(0);
   const blinkPhase = useBlink();
 
@@ -59,11 +62,7 @@ export default function Home() {
 
   return (
     <div className="w-screen h-screen relative overflow-hidden">
-
-      {/*
-        New eye image — pupil is exactly at the center of the source image,
-        so object-position:center maps pupil → screen center precisely.
-      */}
+      {/* Eye background */}
       <img
         src="/bg-eye.jpeg"
         alt=""
@@ -104,18 +103,16 @@ export default function Home() {
           fontFamily: "'Inter', 'SF Pro Display', system-ui, sans-serif",
           color: 'rgba(255,255,255,0.92)', textShadow: '0 1px 4px rgba(0,0,0,0.4)',
         }}>Lucy</span>
-        <span className="select-none" style={{
-          fontSize: 13, fontWeight: 500, letterSpacing: '0.01em',
-          fontFamily: "'Inter', system-ui, sans-serif",
-          color: 'rgba(255,255,255,0.60)', textShadow: '0 1px 3px rgba(0,0,0,0.4)',
-        }}>Jess</span>
+        {firstName && firstName !== "there" && (
+          <span className="select-none" style={{
+            fontSize: 13, fontWeight: 500, letterSpacing: '0.01em',
+            fontFamily: "'Inter', system-ui, sans-serif",
+            color: 'rgba(255,255,255,0.60)', textShadow: '0 1px 3px rgba(0,0,0,0.4)',
+          }}>{firstName}</span>
+        )}
       </header>
 
-      {/*
-        Orb — position:fixed at exactly 50vw / 50vh.
-        Fixed means viewport-relative: unaffected by any layout, scrolling,
-        or DOM structure changes. The orb will NEVER move.
-      */}
+      {/* Orb — position:fixed, viewport-anchored */}
       <div style={{
         position: 'fixed',
         top: '50vh', left: '50vw',
@@ -131,11 +128,7 @@ export default function Home() {
         />
       </div>
 
-      {/*
-        Status label — fixed, exactly below the orb.
-        Uses 50vh + half orb container (60px) + 10px gap.
-        Smaller font (10px) so it reads as a subtle hint, not a heading.
-      */}
+      {/* Status label — below orb */}
       <div style={{
         position: 'fixed',
         top: STATUS_TOP,
@@ -166,10 +159,7 @@ export default function Home() {
         </AnimatePresence>
       </div>
 
-      {/*
-        Transcript — fixed at bottom, grows upward.
-        Never affects orb position since orb is fixed.
-      */}
+      {/* Transcript */}
       <div style={{
         position: 'fixed',
         bottom: 64, left: 0, right: 0,
@@ -179,7 +169,7 @@ export default function Home() {
         <Transcript messages={messages} />
       </div>
 
-      {/* Footer */}
+      {/* Footer hint */}
       <footer className="fixed bottom-0 right-0 pb-5 pr-8 z-50 pointer-events-none">
         <span className="select-none" style={{
           fontSize: 11, color: 'rgba(255,255,255,0.28)',
