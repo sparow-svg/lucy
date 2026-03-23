@@ -9,74 +9,111 @@ export interface ChatMessage {
   content: string;
 }
 
-// ── Tunable constants ────────────────────────────────────────────────────────
-const SILENCE_THRESHOLD  = 0.009;  // Below = silence; lower = more tolerant of ambient noise
-const BARGE_IN_THRESHOLD = 0.022;  // Above = user speaking; slightly lower for faster barge-in
-const SILENCE_MS         = 500;    // Hold silence this long before stopping recording
-const POLL_MS            = 60;     // Volume poll interval
-const MAX_MSGS           = 8;      // Max transcript messages shown
-const SESSION_TIMEOUT_MS = 45_000; // Auto-return to dormant after 45s of inactivity
+// ── Tunable constants ───────────────────────────────────────────────────────
+const SILENCE_THRESHOLD       = 0.009;
+const BARGE_IN_THRESHOLD      = 0.022;
+const SPEECH_THRESHOLD        = 0.015; // RMS above this = user is speaking
+const SILENCE_MS              = 500;
+const POLL_MS                 = 60;
+const MAX_MSGS                = 8;
+const SESSION_TIMEOUT_MS      = 45_000;
+const AUTO_PAUSE_MS           = 10_000; // Auto-pause after 10s no user speech
 
 export function useAssistant() {
-  const [state, setState] = useState<AssistantState>('dormant');
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [micVolume, setMicVolume] = useState(0);
+  const [state, setState]               = useState<AssistantState>('dormant');
+  const [messages, setMessages]         = useState<ChatMessage[]>([]);
+  const [micVolume, setMicVolume]       = useState(0);
   const [isSessionActive, setIsSessionActive] = useState(false);
+  const [isPaused, setIsPaused]         = useState(false);
 
-  // Stable refs — callbacks always see fresh values without stale closure issues
-  const stateRef   = useRef<AssistantState>('dormant');
-  const queue      = useRef(new AudioQueue());
-  const recorder   = useRef<MediaRecorder | null>(null);
-  const chunks     = useRef<Blob[]>([]);
-  const convId     = useRef<number | null>(null);
-  const micStream  = useRef<MediaStream | null>(null);
-  const analyser   = useRef<AnalyserNode | null>(null);
-  const sharedCtx  = useRef<AudioContext | null>(null);
-  const pollTimer  = useRef<ReturnType<typeof setInterval> | null>(null);
-  const silenceStart       = useRef<number | null>(null);
-  const hasInit            = useRef(false);
-  const hasGreeted         = useRef(false);
-  const isActivated        = useRef(false);
-  const isProcessing       = useRef(false);
-  const isSessionRef       = useRef(false);
-  const abortCtrl          = useRef<AbortController | null>(null);
-  const sessionTimeout     = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const wakeWordStartRef   = useRef<(() => void) | null>(null); // For restarting wake-word
+  // ── Stable refs ─────────────────────────────────────────────────────────
+  const stateRef        = useRef<AssistantState>('dormant');
+  const isPausedRef     = useRef(false);
+  const queue           = useRef(new AudioQueue());
+  const recorder        = useRef<MediaRecorder | null>(null);
+  const chunks          = useRef<Blob[]>([]);
+  const convId          = useRef<number | null>(null);
+  const micStream       = useRef<MediaStream | null>(null);
+  const analyser        = useRef<AnalyserNode | null>(null);
+  const sharedCtx       = useRef<AudioContext | null>(null);
+  const pollTimer       = useRef<ReturnType<typeof setInterval> | null>(null);
+  const silenceStart    = useRef<number | null>(null);
+  const lastUserSpeechMs     = useRef(0);   // Last time user RMS > SPEECH_THRESHOLD
+  const lastAutoPauseCheckMs = useRef(0);   // Throttle auto-pause check to 1/s
+  const hasInit         = useRef(false);
+  const hasGreeted      = useRef(false);
+  const isActivated     = useRef(false);
+  const isProcessing    = useRef(false);
+  const isSessionRef    = useRef(false);
+  const abortCtrl       = useRef<AbortController | null>(null);
+  const sessionTimeout  = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Callbacks stored in refs so async effects always see the latest version
+  const wakeWordStartRef   = useRef<(() => void) | null>(null);
+  const resumeSessionRef   = useRef<(() => void) | null>(null);
+  const doStartListeningRef = useRef<(() => void) | null>(null);
 
   const setStateSafe = (s: AssistantState) => {
     stateRef.current = s;
     setState(s);
   };
 
-  // ── Reset 45-second inactivity timer on every interaction ─────────────────
-  const resetSessionTimer = useCallback(() => {
-    if (sessionTimeout.current) clearTimeout(sessionTimeout.current);
-    if (!isSessionRef.current) return;
-    sessionTimeout.current = setTimeout(() => {
-      endSession();
-    }, SESSION_TIMEOUT_MS);
-  }, []);
-
-  // ── End session: stop everything, return to dormant, re-arm wake-word ──────
-  const endSession = useCallback(() => {
+  // ── Helpers ─────────────────────────────────────────────────────────────
+  const stopAudioAndSTT = () => {
     queue.current.stop();
     if (abortCtrl.current) { abortCtrl.current.abort(); abortCtrl.current = null; }
     if (recorder.current?.state === 'recording') {
       try { recorder.current.stop(); } catch { /* ignore */ }
     }
     isProcessing.current = false;
+  };
+
+  const armSessionTimer = () => {
+    if (sessionTimeout.current) clearTimeout(sessionTimeout.current);
+    if (!isSessionRef.current) return;
+    sessionTimeout.current = setTimeout(() => endSession(), SESSION_TIMEOUT_MS);
+  };
+
+  // ── End session: full reset → dormant ────────────────────────────────────
+  const endSession = () => {
+    stopAudioAndSTT();
+    isPausedRef.current  = false;
+    setIsPaused(false);
     isSessionRef.current = false;
-    isActivated.current  = false;  // Allow wake-word to fire again
-    hasGreeted.current   = false;  // Allow fresh greeting next session
+    isActivated.current  = false;
+    hasGreeted.current   = false;
+    lastUserSpeechMs.current = 0;
     if (sessionTimeout.current) clearTimeout(sessionTimeout.current);
     setIsSessionActive(false);
     setStateSafe('dormant');
     setMicVolume(0);
-    // Restart SpeechRecognition after a brief pause
     setTimeout(() => wakeWordStartRef.current?.(), 600);
+  };
+
+  // ── Pause: stop audio/STT, keep context, re-arm wake-word for "Lucy" ────
+  const pauseSession = useCallback(() => {
+    stopAudioAndSTT();
+    isPausedRef.current  = true;
+    setIsPaused(true);
+    isActivated.current  = false; // wake-word can fire again
+    setStateSafe('idle');
+    setMicVolume(0);
+    // Re-arm recognition so "Lucy" can resume the session
+    setTimeout(() => wakeWordStartRef.current?.(), 400);
   }, []);
 
-  // ── SSE reader ───────────────────────────────────────────────────────────
+  // ── Resume: un-pause, start listening immediately ─────────────────────────
+  const resumeSession = () => {
+    if (!isSessionRef.current) return;
+    isPausedRef.current = false;
+    setIsPaused(false);
+    isActivated.current  = true;
+    lastUserSpeechMs.current = Date.now(); // fresh 10s window
+    armSessionTimer();
+    doStartListeningRef.current?.();
+  };
+  resumeSessionRef.current = resumeSession;
+
+  // ── SSE reader ────────────────────────────────────────────────────────────
   const readSSE = async (
     res: Response,
     onText: (t: string) => void,
@@ -112,27 +149,21 @@ export function useAssistant() {
     }
   };
 
-  // ── Message helpers ──────────────────────────────────────────────────────
   const pushMsg  = (msg: ChatMessage) =>
     setMessages(prev => [...prev, msg].slice(-MAX_MSGS));
   const patchMsg = (id: string, content: string) =>
     setMessages(prev => prev.map(m => m.id === id ? { ...m, content } : m));
 
-  // ── Open persistent mic + shared AudioContext (once on activation) ─────────
+  // ── Open mic + shared AudioContext (once per lifecycle) ───────────────────
   const openMic = async () => {
     if (micStream.current) return;
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       micStream.current = stream;
-
       const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
       sharedCtx.current = ctx;
-      if (ctx.state === 'suspended') {
-        try { await ctx.resume(); } catch { /* ignore */ }
-      }
-      // AudioQueue uses the SAME context — no multi-context Safari issues
+      if (ctx.state === 'suspended') { try { await ctx.resume(); } catch { /* ignore */ } }
       queue.current.setContext(ctx);
-
       const src = ctx.createMediaStreamSource(stream);
       const an  = ctx.createAnalyser();
       an.fftSize = 256;
@@ -142,7 +173,7 @@ export function useAssistant() {
     } catch { /* mic denied */ }
   };
 
-  // ── Volume polling (60ms, Safari-safe) ───────────────────────────────────
+  // ── Volume poll: barge-in, silence detection, auto-pause ──────────────────
   const startPoll = () => {
     if (pollTimer.current) return;
     const data = new Uint8Array(analyser.current?.frequencyBinCount ?? 128);
@@ -159,24 +190,49 @@ export function useAssistant() {
       const rms = Math.sqrt(sum / data.length);
       setMicVolume(Math.min(1, rms * 7));
 
-      const s = stateRef.current;
+      const s   = stateRef.current;
+      const now = Date.now();
 
-      // Barge-in: user speaks while Lucy is talking → cut audio, start listening
+      // Track user voice activity
+      if (rms > SPEECH_THRESHOLD && isSessionRef.current) {
+        lastUserSpeechMs.current = now;
+      }
+
+      // Auto-pause check (once per second)
+      // Only fires when idle/listening — never while Lucy is thinking/speaking
+      if (
+        now - lastAutoPauseCheckMs.current > 1_000 &&
+        isSessionRef.current &&
+        !isPausedRef.current &&
+        !isProcessing.current &&
+        s !== 'speaking' && s !== 'thinking' &&
+        lastUserSpeechMs.current > 0 &&
+        now - lastUserSpeechMs.current > AUTO_PAUSE_MS
+      ) {
+        lastAutoPauseCheckMs.current = now;
+        pauseSession();
+        return;
+      }
+      lastAutoPauseCheckMs.current = now;
+
+      if (isPausedRef.current) return; // Don't process audio when paused
+
+      // Barge-in: user speaks while Lucy is talking
       if (s === 'speaking' && rms > BARGE_IN_THRESHOLD) {
         queue.current.stop();
         if (abortCtrl.current) { abortCtrl.current.abort(); abortCtrl.current = null; }
         isProcessing.current = false;
         silenceStart.current = null;
-        resetSessionTimer();
-        doStartListening();
+        armSessionTimer();
+        doStartListeningRef.current?.();
         return;
       }
 
-      // Silence detection: user stopped talking → send to Lucy
+      // Silence detection → send audio
       if (s === 'listening') {
         if (rms < SILENCE_THRESHOLD) {
-          if (!silenceStart.current) silenceStart.current = Date.now();
-          else if (Date.now() - silenceStart.current > SILENCE_MS) {
+          if (!silenceStart.current) silenceStart.current = now;
+          else if (now - silenceStart.current > SILENCE_MS) {
             silenceStart.current = null;
             doStopListening();
           }
@@ -194,16 +250,13 @@ export function useAssistant() {
 
   // ── Start listening ────────────────────────────────────────────────────────
   const doStartListening = useCallback(() => {
-    const stream = micStream.current;
-    if (!stream) return;
-    if (isProcessing.current) return;
+    if (!micStream.current || isProcessing.current || isPausedRef.current) return;
     const s = stateRef.current;
     if (s === 'thinking' || s === 'speaking' || s === 'listening') return;
-
-    resetSessionTimer();
+    armSessionTimer();
     chunks.current = [];
     try {
-      const rec = new MediaRecorder(stream);
+      const rec = new MediaRecorder(micStream.current);
       recorder.current = rec;
       rec.ondataavailable = e => { if (e.data.size > 0) chunks.current.push(e.data); };
       rec.onstop = () => {
@@ -216,7 +269,8 @@ export function useAssistant() {
     } catch {
       setStateSafe('idle');
     }
-  }, [resetSessionTimer]);
+  }, []); // stable — reads from refs only
+  doStartListeningRef.current = doStartListening;
 
   // ── Stop listening ─────────────────────────────────────────────────────────
   const doStopListening = useCallback(() => {
@@ -227,70 +281,62 @@ export function useAssistant() {
     }
   }, []);
 
-  // ── Process voice input → gpt-audio → TTS stream ─────────────────────────
+  // ── Process voice → gpt-audio → TTS ─────────────────────────────────────
   const doProcessVoice = useCallback(async (blob: Blob) => {
-    if (isProcessing.current) return;
+    if (isProcessing.current || isPausedRef.current) return;
     if (!convId.current) { setStateSafe('idle'); return; }
     isProcessing.current = true;
-    resetSessionTimer();
-
+    armSessionTimer();
     const ctx = sharedCtx.current;
-    if (ctx && ctx.state === 'suspended') {
-      try { await ctx.resume(); } catch { /* ignore */ }
-    }
-
+    if (ctx?.state === 'suspended') { try { await ctx.resume(); } catch { /* ignore */ } }
     try {
       setStateSafe('thinking');
-
       const base64 = await new Promise<string>((res, rej) => {
         const fr = new FileReader();
         fr.readAsDataURL(blob);
         fr.onloadend = () => res((fr.result as string).split(',')[1]);
         fr.onerror = rej;
       });
-
       const ctrl = new AbortController();
       abortCtrl.current = ctrl;
-
-      const resp = await fetch(`/api/openai/conversations/${convId.current}/voice-messages`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ audio: base64 }),
-        signal: ctrl.signal,
-      });
-
-      if (!resp.ok) throw new Error(`voice failed: ${resp.status}`);
-
+      const resp = await fetch(
+        `/api/openai/conversations/${convId.current}/voice-messages`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ audio: base64 }),
+          signal: ctrl.signal,
+        }
+      );
+      if (!resp.ok) throw new Error(`voice ${resp.status}`);
       setStateSafe('speaking');
       let text = '';
       const id = crypto.randomUUID();
       pushMsg({ id, role: 'assistant', content: '' });
-
       await readSSE(resp,
         t => { text += t; patchMsg(id, text); },
         a => { queue.current.playChunk(a); },
         ctrl.signal
       );
-
     } catch (err) {
-      if ((err as Error)?.name !== 'AbortError') {
-        console.error('[Lucy] voice error:', err);
-      }
-      setStateSafe('idle');
+      if ((err as Error)?.name !== 'AbortError') console.error('[Lucy] voice:', err);
+      if (!isPausedRef.current) setStateSafe('idle');
     } finally {
       isProcessing.current = false;
       abortCtrl.current = null;
     }
-  }, [resetSessionTimer]);
+  }, []);
 
-  // ── Speaking → idle → listen loop (100ms poll) ────────────────────────────
+  // ── Speaking → idle → listen loop ────────────────────────────────────────
   useEffect(() => {
     const iv = setInterval(() => {
       if (stateRef.current === 'speaking' && !queue.current.isPlaying) {
         setStateSafe('idle');
-        if (isSessionRef.current && !isProcessing.current) {
+        // Reset user speech timer when Lucy finishes — gives user fresh 10s to respond
+        if (isSessionRef.current) lastUserSpeechMs.current = Date.now();
+        if (isSessionRef.current && !isProcessing.current && !isPausedRef.current) {
           setTimeout(() => {
-            if (stateRef.current === 'idle' && !isProcessing.current) {
+            if (stateRef.current === 'idle' && !isProcessing.current && !isPausedRef.current) {
               doStartListening();
             }
           }, 120);
@@ -300,37 +346,29 @@ export function useAssistant() {
     return () => clearInterval(iv);
   }, [doStartListening]);
 
-  // ── Greeting ──────────────────────────────────────────────────────────────
+  // ── Greeting ─────────────────────────────────────────────────────────────
   const doGreet = useCallback(async () => {
     if (hasGreeted.current) return;
     hasGreeted.current = true;
     if (!convId.current) { setStateSafe('idle'); return; }
-    resetSessionTimer();
-
+    armSessionTimer();
     const ctx = sharedCtx.current;
-    if (ctx && ctx.state === 'suspended') {
-      try { await ctx.resume(); } catch { /* ignore */ }
-    }
-
+    if (ctx?.state === 'suspended') { try { await ctx.resume(); } catch { /* ignore */ } }
     try {
       setStateSafe('thinking');
       const ctrl = new AbortController();
       abortCtrl.current = ctrl;
-
       const resp = await fetch('/api/openai/proactive-greeting', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({}),
         signal: ctrl.signal,
       });
-
       if (!resp.ok) throw new Error('greeting failed');
-
       setStateSafe('speaking');
       let text = '';
       const id = crypto.randomUUID();
       pushMsg({ id, role: 'assistant', content: '' });
-
       await readSSE(resp,
         t => { text += t; patchMsg(id, text); },
         a => { queue.current.playChunk(a); },
@@ -341,9 +379,9 @@ export function useAssistant() {
     } finally {
       abortCtrl.current = null;
     }
-  }, [resetSessionTimer]);
+  }, []);
 
-  // ── Init: pre-create conversation once ────────────────────────────────────
+  // ── Pre-create conversation ───────────────────────────────────────────────
   useEffect(() => {
     if (hasInit.current) return;
     hasInit.current = true;
@@ -351,61 +389,70 @@ export function useAssistant() {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ title: 'Lucy Session' }),
-    })
-      .then(r => r.json())
-      .then(c => { convId.current = c.id; })
-      .catch(() => {});
+    }).then(r => r.json()).then(c => { convId.current = c.id; }).catch(() => {});
   }, []);
 
-  // ── Wake-word via SpeechRecognition ───────────────────────────────────────
+  // ── Wake-word (SpeechRecognition) ─────────────────────────────────────────
   useEffect(() => {
-    const SRClass = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    const SRClass =
+      (window as any).SpeechRecognition ||
+      (window as any).webkitSpeechRecognition;
     if (!SRClass) return;
 
     let alive = true;
     let recognition: SpeechRecognition | null = null;
 
     const start = () => {
-      if (!alive || isActivated.current) return;
+      // Run when: not yet activated OR session is paused (waiting for "Lucy to continue")
+      if (!alive) return;
+      if (isActivated.current && !isPausedRef.current) return;
       try {
         recognition = new SRClass();
-        recognition.continuous = false;   // Safari-safe: restart manually on onend
+        recognition.continuous     = false; // Safari-safe: manual restart on onend
         recognition.interimResults = true;
-        recognition.lang = 'en-US';
+        recognition.lang            = 'en-US';
         recognition.maxAlternatives = 1;
 
         recognition.onresult = async (e: SpeechRecognitionEvent) => {
-          if (isActivated.current) return;
           for (let i = e.resultIndex; i < e.results.length; i++) {
             const t = e.results[i][0].transcript.toLowerCase().trim();
             if (t.includes('lucy') || t.includes('luci')) {
-              isActivated.current  = true;
-              isSessionRef.current = true;
-              setIsSessionActive(true);
               recognition?.abort();
-              await openMic();
-              startPoll();
-              doGreet();
+
+              if (isPausedRef.current && isSessionRef.current) {
+                // ── Resume paused session ──
+                isActivated.current = true;
+                resumeSessionRef.current?.();
+              } else if (!isActivated.current) {
+                // ── Fresh session start ──
+                isActivated.current  = true;
+                isSessionRef.current = true;
+                setIsSessionActive(true);
+                lastUserSpeechMs.current = 0;
+                await openMic();
+                startPoll();
+                doGreet();
+              }
               return;
             }
           }
         };
 
         recognition.onend = () => {
-          if (!isActivated.current && alive) setTimeout(start, 200);
+          // Restart if: not yet activated, OR if session is paused
+          if (alive && (!isActivated.current || isPausedRef.current)) {
+            setTimeout(start, 200);
+          }
         };
 
         recognition.onerror = (e: SpeechRecognitionErrorEvent) => {
-          if (!isActivated.current && alive && e.error !== 'not-allowed') {
-            setTimeout(start, 300);
-          }
+          if (alive && e.error !== 'not-allowed') setTimeout(start, 300);
         };
 
         recognition.start();
       } catch { /* ignore */ }
     };
 
-    // Expose start so endSession can re-arm wake-word after timeout
     wakeWordStartRef.current = start;
     start();
 
@@ -415,21 +462,16 @@ export function useAssistant() {
     };
   }, [doGreet]);
 
-  // ── Manual orb tap ────────────────────────────────────────────────────────
+  // ── Orb tap: pause if active, resume if paused ───────────────────────────
   const toggleRecording = useCallback(() => {
-    if (!isSessionRef.current) return;
-    const s = stateRef.current;
-    if (s === 'listening') {
-      doStopListening();
-    } else if (s === 'idle') {
-      doStartListening();
-    } else if (s === 'speaking') {
-      queue.current.stop();
-      if (abortCtrl.current) { abortCtrl.current.abort(); abortCtrl.current = null; }
-      isProcessing.current = false;
-      doStartListening();
+    if (isPausedRef.current) {
+      resumeSessionRef.current?.();
+      return;
     }
-  }, [doStartListening, doStopListening]);
+    if (isSessionRef.current) {
+      pauseSession();
+    }
+  }, [pauseSession]);
 
   // ── Cleanup on unmount ────────────────────────────────────────────────────
   useEffect(() => {
@@ -443,5 +485,5 @@ export function useAssistant() {
     };
   }, []);
 
-  return { state, messages, micVolume, isSessionActive, toggleRecording };
+  return { state, messages, micVolume, isSessionActive, isPaused, toggleRecording };
 }
