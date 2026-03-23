@@ -1,0 +1,50 @@
+Lucy — Eye + Voice-Responsive Orb Interface
+
+OBJECTIVE:
+- Render a realistic female eye as background, centered on screen.
+- Place a black pupil at the center.
+- Overlay an interactive Apple-blue orb or ring exactly on top of the pupil.
+- Orb reacts to voice states: listening, thinking, speaking.
+- Keep performance light and Safari-friendly.
+
+INSTRUCTIONS:
+
+1. Background & Eye Placement:
+- Use the existing eye background image.
+- Center the eye both vertically and horizontally on the page.
+- The black pupil should be **aligned at the exact center of the screen**.
+- The eye should remain static (no full 3D movement) to save GPU.
+
+2. Orb / Ring Placement:
+- Overlay a circle (orb or ring) directly on top of the pupil.
+- Orb dimensions: roughly 20–30% of pupil size (adjust visually).
+- Center orb on pupil coordinates.
+- Orb color states:
+   - Dormant: black / very dark gray (#1a1a1a)
+   - Listening: soft Apple-blue (#0A84FF)
+   - Thinking: deeper blue (#0051D5)
+   - Speaking: bright blue with subtle glow
+
+3. Orb Animation:
+- Voice amplitude drives orb scale / glow intensity.
+- Listening: slow subtle pulse.
+- Thinking: slow rotation or subtle ring expansion.
+- Speaking: scale up slightly, optional micro glow rings.
+- Keep all animations lightweight (SVG or Canvas preferred) to avoid Safari crashes.
+
+4. Continuous Interaction:
+- Orb reacts in real-time without requiring clicks.
+- Barge-in: user can speak at any time; orb immediately switches state to listening and audio stream resumes.
+- Maintain persistent AudioContext and TTS streaming.
+
+5. Frontend Considerations:
+- Use React.memo or similar to avoid re-rendering the full orb for every transcript update.
+- Throttle DOM/CSS animations to max 60ms intervals.
+- Ensure eye + orb layout scales responsively for desktop and mobile screens.
+- Optional: micro-blinks of the eye every few seconds for personality, very subtle to avoid CPU load.
+
+RESULT:
+- Eye centered on screen with pupil as focal point.
+- Interactive Apple-blue orb/ring overlayed on pupil.
+- Orb reacts fluidly to voice in real-time.
+- Full continuous conversation and voice streaming work without crashes.
