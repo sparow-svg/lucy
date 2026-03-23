@@ -17,7 +17,7 @@ const SILENCE_MS         = 800;
 const MAX_RECORD_MS      = 10_000;
 const MIN_BLOB_BYTES     = 400;
 const POLL_MS            = 60;
-const MAX_MSGS           = 8;
+const MAX_MSGS           = 2000;
 const SESSION_TIMEOUT_MS = 45_000;
 const AUTO_PAUSE_MS      = 10_000;
 

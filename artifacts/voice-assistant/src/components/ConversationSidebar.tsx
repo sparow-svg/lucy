@@ -232,9 +232,38 @@ function MemoryPanel({
       {open && (
         <div style={{ padding: "0 8px 12px" }}>
           {memories.length === 0 ? (
-            <p style={{ fontSize: 12, color: "#bbb", fontFamily: "'Inter', system-ui, sans-serif", margin: "0 8px 10px", lineHeight: 1.5 }}>
-              Nothing yet. Add things Lucy should remember about you.
-            </p>
+            <div style={{ marginBottom: 8 }}>
+              {[
+                "I need to submit the report by Friday.",
+                "My favorite coffee is black.",
+                "My project deadline is March 28.",
+              ].map((example, i) => (
+                <div
+                  key={i}
+                  style={{
+                    display: "flex",
+                    alignItems: "flex-start",
+                    gap: 6,
+                    padding: "5px 8px",
+                    borderRadius: 6,
+                  }}
+                >
+                  <span style={{
+                    fontSize: 11,
+                    color: "#ccc",
+                    fontFamily: "'Inter', system-ui, sans-serif",
+                    flex: 1,
+                    lineHeight: 1.5,
+                    fontStyle: "italic",
+                  }}>
+                    {example}
+                  </span>
+                </div>
+              ))}
+              <p style={{ fontSize: 11, color: "#d0d0d0", fontFamily: "'Inter', system-ui, sans-serif", margin: "4px 8px 0", lineHeight: 1.5, fontStyle: "italic" }}>
+                Add things Lucy should remember across all conversations.
+              </p>
+            </div>
           ) : (
             <div style={{ marginBottom: 8 }}>
               {memories.map(m => (

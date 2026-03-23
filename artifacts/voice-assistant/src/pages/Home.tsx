@@ -158,14 +158,14 @@ export default function Home({
                   onClick={() => setShowUserMenu(false)}
                 />
                 <div style={{
-                  position: "absolute", top: "calc(100% + 4px)", right: 0,
+                  position: "absolute", top: "calc(100% + 6px)", right: 0,
                   width: 140,
-                  backgroundColor: "rgba(18,18,22,0.97)",
-                  border: "1px solid rgba(255,255,255,0.10)",
-                  borderRadius: 10,
+                  backgroundColor: "#fff",
+                  border: "1px solid #e8e8e8",
+                  borderRadius: 12,
                   overflow: "hidden",
                   zIndex: 99,
-                  boxShadow: "0 4px 24px rgba(0,0,0,0.5)",
+                  boxShadow: "0 4px 24px rgba(0,0,0,0.12)",
                 }}>
                   <button
                     onClick={() => { setShowUserMenu(false); onSignOut?.(); }}
@@ -174,10 +174,10 @@ export default function Home({
                       padding: "10px 14px",
                       textAlign: "left",
                       fontSize: 13, fontFamily: "'Inter', system-ui, sans-serif",
-                      color: "rgba(255,255,255,0.75)",
+                      color: "#333",
                       background: "none", border: "none", cursor: "pointer",
                     }}
-                    onMouseEnter={e => ((e.currentTarget as HTMLButtonElement).style.backgroundColor = "rgba(255,255,255,0.06)")}
+                    onMouseEnter={e => ((e.currentTarget as HTMLButtonElement).style.backgroundColor = "#f5f5f5")}
                     onMouseLeave={e => ((e.currentTarget as HTMLButtonElement).style.backgroundColor = "transparent")}
                   >
                     Sign out

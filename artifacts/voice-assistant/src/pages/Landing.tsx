@@ -56,7 +56,6 @@ export default function Landing({ onStart, onSignIn }: LandingProps) {
           </span>
 
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-            {/* Sign in link */}
             <button
               onClick={onSignIn}
               style={{
@@ -77,7 +76,6 @@ export default function Landing({ onStart, onSignIn }: LandingProps) {
               Sign in
             </button>
 
-            {/* Start / Get started button */}
             <button
               onClick={onStart}
               style={{
@@ -110,6 +108,7 @@ export default function Landing({ onStart, onSignIn }: LandingProps) {
           display: "flex", flexDirection: "column",
           alignItems: "center", justifyContent: "center",
           textAlign: "center", padding: "0 24px", pointerEvents: "none",
+          gap: 12,
         }}>
           <p style={{
             fontSize: "clamp(15px, 2vw, 18px)", fontWeight: 400,
@@ -118,6 +117,14 @@ export default function Landing({ onStart, onSignIn }: LandingProps) {
             margin: 0, maxWidth: 420, lineHeight: 1.5,
           }}>
             Your personal voice AI assistant
+          </p>
+          <p style={{
+            fontSize: 12, fontWeight: 400,
+            color: "rgba(255,255,255,0.35)", letterSpacing: "0.01em",
+            textShadow: "0 1px 6px rgba(0,0,0,0.4)",
+            margin: 0, maxWidth: 480, lineHeight: 1.7,
+          }}>
+            The world's first AI companion that listens, remembers, and talks with you — helping you think, plan, and stay connected, naturally.
           </p>
         </div>
 

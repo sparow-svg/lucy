@@ -9,8 +9,8 @@ export interface AuthUser {
 interface AuthContextValue {
   user: AuthUser | null;
   isLoading: boolean;
-  login: (identifier: string, password: string) => Promise<void>;
-  register: (firstName: string, password: string, email?: string) => Promise<void>;
+  login: (email: string, password: string) => Promise<void>;
+  register: (firstName: string, password: string, email: string) => Promise<void>;
   logout: () => Promise<void>;
 }
 
@@ -28,12 +28,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       .finally(() => setIsLoading(false));
   }, []);
 
-  const login = useCallback(async (identifier: string, password: string) => {
+  const login = useCallback(async (email: string, password: string) => {
     const res = await fetch("/api/auth/login", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       credentials: "include",
-      body: JSON.stringify({ identifier, password }),
+      body: JSON.stringify({ email, password }),
     });
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
@@ -43,12 +43,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(data);
   }, []);
 
-  const register = useCallback(async (firstName: string, password: string, email?: string) => {
+  const register = useCallback(async (firstName: string, password: string, email: string) => {
     const res = await fetch("/api/auth/register", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       credentials: "include",
-      body: JSON.stringify({ firstName, password, email: email || undefined }),
+      body: JSON.stringify({ firstName, password, email }),
     });
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));

@@ -1,7 +1,7 @@
 import { Router, type IRouter } from "express";
 import bcrypt from "bcrypt";
 import { db, users } from "@workspace/db";
-import { eq, or } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 
 const router: IRouter = Router();
 const SALT_ROUNDS = 10;
@@ -26,18 +26,21 @@ router.post("/register", async (req, res) => {
       return;
     }
 
-    const normalizedName = firstName.trim();
-    const normalizedEmail = email?.trim().toLowerCase() || null;
+    if (!email?.trim()) {
+      res.status(400).json({ error: "Email is required" });
+      return;
+    }
 
-    if (normalizedEmail) {
-      const [existing] = await db
-        .select()
-        .from(users)
-        .where(eq(users.email, normalizedEmail));
-      if (existing) {
-        res.status(409).json({ error: "Email already registered" });
-        return;
-      }
+    const normalizedName = firstName.trim();
+    const normalizedEmail = email.trim().toLowerCase();
+
+    const [existing] = await db
+      .select()
+      .from(users)
+      .where(eq(users.email, normalizedEmail));
+    if (existing) {
+      res.status(409).json({ error: "Email already registered" });
+      return;
     }
 
     const passwordHash = await bcrypt.hash(password, SALT_ROUNDS);
@@ -63,36 +66,31 @@ router.post("/register", async (req, res) => {
 
 router.post("/login", async (req, res) => {
   try {
-    const { identifier, password } = req.body as {
-      identifier?: string;
+    const { email, password } = req.body as {
+      email?: string;
       password?: string;
     };
 
-    if (!identifier?.trim() || !password) {
-      res.status(400).json({ error: "Name/email and password are required" });
+    if (!email?.trim() || !password) {
+      res.status(400).json({ error: "Email and password are required" });
       return;
     }
 
-    const id = identifier.trim().toLowerCase();
+    const normalizedEmail = email.trim().toLowerCase();
 
     const [user] = await db
       .select()
       .from(users)
-      .where(
-        or(
-          eq(users.email, id),
-          eq(users.firstName, identifier.trim())
-        )
-      );
+      .where(eq(users.email, normalizedEmail));
 
     if (!user) {
-      res.status(401).json({ error: "Invalid credentials" });
+      res.status(401).json({ error: "Invalid email or password" });
       return;
     }
 
     const match = await bcrypt.compare(password, user.passwordHash);
     if (!match) {
-      res.status(401).json({ error: "Invalid credentials" });
+      res.status(401).json({ error: "Invalid email or password" });
       return;
     }
 

@@ -20,7 +20,7 @@ export const Transcript = memo(function Transcript({ messages }: TranscriptProps
   return (
     <div
       ref={containerRef}
-      className="w-full max-w-sm mx-auto mt-8 max-h-[28vh] overflow-y-auto scroll-smooth pb-6 px-4"
+      className="w-full max-w-sm mx-auto mt-8 max-h-[55vh] overflow-y-auto scroll-smooth pb-6 px-4"
       style={{
         maskImage: 'linear-gradient(to bottom, transparent, black 12%, black 80%, transparent)',
         WebkitMaskImage: 'linear-gradient(to bottom, transparent, black 12%, black 80%, transparent)',
