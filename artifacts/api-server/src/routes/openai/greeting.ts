@@ -24,7 +24,7 @@ router.post("/", async (req, res) => {
           role: "system",
           content: `${systemMsg}
 
-GREETING INSTRUCTION: ${firstName} just activated you by saying your name. Open with "${timeGreeting}" then add one short, natural sentence that invites them to talk — like a warm colleague who just looked up from their desk. Keep it to two sentences maximum. Do not reference schedules or tasks. Do not say generic things like "How can I help?" — keep it personal and brief.`,
+GREETING INSTRUCTION: This is the ONLY greeting you will give this session — do not greet again. Start with exactly "${timeGreeting}" then add one short natural follow-up (one sentence). Do not say "How can I help?", "What can I do for you?", or any generic assistant phrase. Do not reference tasks or schedule unless the user has mentioned them. Stay calm and brief — two sentences total maximum.`,
         },
         { role: "user", content: "Hey Lucy" },
       ],
