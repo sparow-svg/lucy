@@ -66,7 +66,7 @@ export function Footer() {
 
         {/* Mac download button — links to GitHub Releases */}
         <a
-          href="https://github.com/lucy-ai/lucy/releases/latest"
+          href="https://github.com/sparow-svg/lucy/releases/latest"
           target="_blank"
           rel="noopener noreferrer"
           title="Download the latest Lucy desktop app for Mac"
@@ -92,7 +92,9 @@ export function Footer() {
 
         {/* Web app link */}
         <a
-          href="/"
+          href="https://lucybrain.replit.app/"
+          target="_blank"
+          rel="noopener noreferrer"
           style={{
             display: "inline-flex",
             alignItems: "center",
