@@ -3,11 +3,10 @@ import { db, messages, conversations } from "@workspace/db";
 import { eq, asc } from "drizzle-orm";
 import { ensureCompatibleFormat } from "@workspace/integrations-openai-ai-server/audio";
 import { openai } from "@workspace/integrations-openai-ai-server";
-import { LUCY_SYSTEM_PROMPT } from "../../data/mockData.js";
+import { buildSystemMessage } from "../../data/mockData.js";
 
 const router: IRouter = Router({ mergeParams: true });
 
-// How many recent turns of history to include
 const MAX_HISTORY_TURNS = 10;
 
 router.post("/:id/voice-messages", async (req, res) => {
@@ -33,14 +32,12 @@ router.post("/:id/voice-messages", async (req, res) => {
     const { buffer, format } = await ensureCompatibleFormat(audioBuffer);
     const audioBase64 = buffer.toString("base64");
 
-    // Fetch recent conversation history for context
     const history = await db
       .select()
       .from(messages)
       .where(eq(messages.conversationId, id))
       .orderBy(asc(messages.id));
 
-    // Build history messages — text-only turns from DB
     const recentHistory = history.slice(-MAX_HISTORY_TURNS * 2);
     const historyMessages = recentHistory
       .filter((m) => m.content && m.content !== "[voice message]")
@@ -57,13 +54,15 @@ router.post("/:id/voice-messages", async (req, res) => {
     let userTranscript = "";
     let assistantTranscript = "";
 
-    // Single gpt-audio call: system + history + current audio input → streaming text + audio
+    // Fresh system message on every turn — includes current date/time
+    const systemMsg = buildSystemMessage();
+
     const stream = await openai.chat.completions.create({
       model: "gpt-audio",
       modalities: ["text", "audio"],
       audio: { voice: "nova", format: "pcm16" },
       messages: [
-        { role: "system", content: LUCY_SYSTEM_PROMPT },
+        { role: "system", content: systemMsg },
         ...historyMessages,
         {
           role: "user",
@@ -86,13 +85,11 @@ router.post("/:id/voice-messages", async (req, res) => {
       if (delta?.audio?.data) {
         res.write(`data: ${JSON.stringify({ type: "audio", data: delta.audio.data })}\n\n`);
       }
-      // Capture user transcript if returned
       if (delta?.content) {
         userTranscript += delta.content;
       }
     }
 
-    // Save both turns to DB (with real transcript for future context)
     await db.insert(messages).values([
       {
         conversationId: id,
@@ -138,7 +135,6 @@ router.post("/:id/messages", async (req, res) => {
       return;
     }
 
-    // Fetch recent history
     const history = await db
       .select()
       .from(messages)
@@ -160,10 +156,12 @@ router.post("/:id/messages", async (req, res) => {
 
     let fullResponse = "";
 
+    const systemMsg = buildSystemMessage();
+
     const stream = await openai.chat.completions.create({
       model: "gpt-5-mini",
       messages: [
-        { role: "system", content: LUCY_SYSTEM_PROMPT },
+        { role: "system", content: systemMsg },
         ...historyMessages,
         { role: "user", content },
       ],

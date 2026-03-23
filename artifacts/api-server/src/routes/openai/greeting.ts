@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { openai } from "@workspace/integrations-openai-ai-server";
-import { LUCY_SYSTEM_PROMPT } from "../../data/mockData.js";
+import { buildSystemMessage, buildRuntimeContext, USER_PROFILE } from "../../data/mockData.js";
 
 const router: IRouter = Router();
 
@@ -11,6 +11,16 @@ router.post("/", async (req, res) => {
   res.flushHeaders();
 
   try {
+    // Determine time-of-day greeting
+    const hour = new Date().getUTCHours();
+    const timeGreeting =
+      hour >= 5 && hour < 12  ? `Good morning, ${USER_PROFILE.firstName}!` :
+      hour >= 12 && hour < 17 ? `Good afternoon, ${USER_PROFILE.firstName}!` :
+      hour >= 17 && hour < 21 ? `Good evening, ${USER_PROFILE.firstName}!` :
+                                `Hey, ${USER_PROFILE.firstName}!`;
+
+    const systemMsg = buildSystemMessage();
+
     const stream = await openai.chat.completions.create({
       model: "gpt-audio",
       modalities: ["text", "audio"],
@@ -18,11 +28,11 @@ router.post("/", async (req, res) => {
       messages: [
         {
           role: "system",
-          content: `${LUCY_SYSTEM_PROMPT}
+          content: `${systemMsg}
 
-The user just said your name to activate you. Respond with a single short, natural greeting — like a colleague who just looked up from their desk. No schedule references, no task lists, no hard-coded content. Just a warm, brief opener that invites them to talk. Examples of the right energy: "Hey, what's up?", "I'm here — what's going on?", "Hey! What do you need?"`,
+GREETING INSTRUCTION: ${USER_PROFILE.firstName} just activated you by saying your name. Open with "${timeGreeting}" then add one short, natural sentence that invites them to talk — like a warm colleague who just looked up from their desk. Do not reference schedules or tasks unless you have data about them. Do not say anything generic like "How can I help?" — keep it personal and brief.`,
         },
-        { role: "user", content: "Hey Lucy" },
+        { role: "user", content: `Hey Lucy` },
       ],
       stream: true,
     });

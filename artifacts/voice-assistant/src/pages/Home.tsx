@@ -98,12 +98,17 @@ export default function Home() {
       }} />
 
       {/* Header */}
-      <header className="fixed top-0 left-0 right-0 z-50 flex items-center px-8 h-16">
+      <header className="fixed top-0 left-0 right-0 z-50 flex items-center justify-between px-8 h-16">
         <span className="select-none" style={{
           fontSize: 17, fontWeight: 600, letterSpacing: '-0.03em',
           fontFamily: "'Inter', 'SF Pro Display', system-ui, sans-serif",
           color: 'rgba(255,255,255,0.92)', textShadow: '0 1px 4px rgba(0,0,0,0.4)',
         }}>Lucy</span>
+        <span className="select-none" style={{
+          fontSize: 13, fontWeight: 500, letterSpacing: '0.01em',
+          fontFamily: "'Inter', system-ui, sans-serif",
+          color: 'rgba(255,255,255,0.60)', textShadow: '0 1px 3px rgba(0,0,0,0.4)',
+        }}>Jess</span>
       </header>
 
       {/*
