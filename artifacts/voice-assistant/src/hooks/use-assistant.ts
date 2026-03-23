@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect } from "react";
 import { AudioQueue } from "@/lib/audio-queue";
 import { useGetAssistantContext } from "@/hooks/use-queries";
 
@@ -11,10 +11,10 @@ export interface ChatMessage {
 }
 
 const SILENCE_THRESHOLD = 0.013;
-const BARGE_IN_THRESHOLD = 0.025;
-const SILENCE_TIMEOUT_MS = 400;
-const VOLUME_POLL_MS = 60; // 60ms interval — Safari friendly
-const MAX_MESSAGES = 6;    // Keep transcript short
+const BARGE_IN_THRESHOLD = 0.026;
+const SILENCE_MS = 400;
+const POLL_MS = 60;
+const MAX_MSGS = 6;
 
 export function useAssistant() {
   const [state, setState] = useState<AssistantState>('dormant');
@@ -22,328 +22,370 @@ export function useAssistant() {
   const [micVolume, setMicVolume] = useState(0);
   const [isSessionActive, setIsSessionActive] = useState(false);
 
-  // Refs — stable across renders
-  const audioQueueRef = useRef<AudioQueue>(new AudioQueue());
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-  const audioChunksRef = useRef<Blob[]>([]);
-  const convIdRef = useRef<number | null>(null);
+  // All mutable state in refs so callbacks always see fresh values
   const stateRef = useRef<AssistantState>('dormant');
-  const hasGreetedRef = useRef(false);
-  const sessionActiveRef = useRef(false);
-  const recognitionRef = useRef<SpeechRecognition | null>(null);
-  const volumePollRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const analyserRef = useRef<AnalyserNode | null>(null);
-  const micCtxRef = useRef<AudioContext | null>(null);
-  const micStreamRef = useRef<MediaStream | null>(null);
-  const silenceStartRef = useRef<number | null>(null);
+  const queue = useRef(new AudioQueue());
+  const recorder = useRef<MediaRecorder | null>(null);
+  const chunks = useRef<Blob[]>([]);
+  const convId = useRef<number | null>(null);
+  const micStream = useRef<MediaStream | null>(null);
+  const analyser = useRef<AnalyserNode | null>(null);
+  const micCtx = useRef<AudioContext | null>(null);
+  const pollTimer = useRef<ReturnType<typeof setInterval> | null>(null);
+  const silenceStart = useRef<number | null>(null);
+  const hasInit = useRef(false);         // guard: conversation created once
+  const hasGreeted = useRef(false);      // guard: greeting fires once
+  const isActivated = useRef(false);     // guard: wake-word fires once
+  const isProcessing = useRef(false);    // guard: one voice request at a time
+  const isSessionRef = useRef(false);
+  const abortCtrl = useRef<AbortController | null>(null);
 
-  // Keep stateRef in sync
-  useEffect(() => { stateRef.current = state; }, [state]);
+  const setStateSafe = (s: AssistantState) => {
+    stateRef.current = s;
+    setState(s);
+  };
 
   const { data: contextData } = useGetAssistantContext({
     query: { retry: false, refetchOnWindowFocus: false }
   });
 
-  // --- SSE parser ---
-  const parseSSE = useCallback(async (
-    response: Response,
-    onTranscript: (text: string) => void,
-    onAudio: (base64: string) => void,
-    onDone: () => void
+  // ── SSE reader ──────────────────────────────────────────────────────────
+  const readSSE = async (
+    res: Response,
+    onText: (t: string) => void,
+    onAudio: (b: string) => void,
+    signal?: AbortSignal
   ) => {
-    if (!response.body) return;
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = '';
+    if (!res.body) return;
+    const reader = res.body.getReader();
+    const dec = new TextDecoder();
+    let buf = '';
     try {
       while (true) {
+        if (signal?.aborted) break;
         const { done, value } = await reader.read();
         if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split('\n\n');
-        buffer = lines.pop() || '';
-        for (const block of lines) {
-          const dataLine = block.split('\n').find(l => l.startsWith('data: '));
-          if (!dataLine) continue;
-          const dataStr = dataLine.slice(6);
-          if (dataStr === '[DONE]') continue;
+        buf += dec.decode(value, { stream: true });
+        const parts = buf.split('\n\n');
+        buf = parts.pop() ?? '';
+        for (const block of parts) {
+          const line = block.split('\n').find(l => l.startsWith('data: '));
+          if (!line) continue;
+          const raw = line.slice(6);
+          if (raw === '[DONE]') continue;
           try {
-            const parsed = JSON.parse(dataStr);
-            if (parsed.type === 'transcript' || parsed.content) onTranscript(parsed.data || parsed.content);
-            else if (parsed.type === 'audio') onAudio(parsed.data);
-            else if (parsed.done) onDone();
-          } catch { /* malformed */ }
+            const p = JSON.parse(raw);
+            if (p.type === 'transcript' || p.content) onText(p.data ?? p.content);
+            else if (p.type === 'audio') onAudio(p.data);
+          } catch { /* skip bad chunk */ }
         }
       }
     } finally {
       reader.releaseLock();
     }
-  }, []);
+  };
 
-  // --- Persistent mic stream — open once per session ---
-  const openMicStream = useCallback(async () => {
-    if (micStreamRef.current) return; // already open
+  // ── Message helpers ──────────────────────────────────────────────────────
+  const pushMsg = (msg: ChatMessage) =>
+    setMessages(prev => [...prev, msg].slice(-MAX_MSGS));
+
+  const patchMsg = (id: string, content: string) =>
+    setMessages(prev => prev.map(m => m.id === id ? { ...m, content } : m));
+
+  // ── Open persistent mic (called once on activation) ───────────────────
+  const openMic = async () => {
+    if (micStream.current) return;
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      micStreamRef.current = stream;
+      micStream.current = stream;
       const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
-      micCtxRef.current = ctx;
-      const source = ctx.createMediaStreamSource(stream);
-      const analyser = ctx.createAnalyser();
-      analyser.fftSize = 128;
-      analyser.smoothingTimeConstant = 0.8;
-      source.connect(analyser);
-      analyserRef.current = analyser;
+      micCtx.current = ctx;
+      const src = ctx.createMediaStreamSource(stream);
+      const an = ctx.createAnalyser();
+      an.fftSize = 256;
+      an.smoothingTimeConstant = 0.8;
+      src.connect(an);
+      analyser.current = an;
     } catch { /* mic denied */ }
-  }, []);
+  };
 
-  // --- Volume polling — throttled to VOLUME_POLL_MS ---
-  const startVolumePolling = useCallback(() => {
-    if (volumePollRef.current) return;
-    const dataArr = new Uint8Array(analyserRef.current?.frequencyBinCount ?? 64);
-
-    volumePollRef.current = setInterval(() => {
-      const analyser = analyserRef.current;
-      if (!analyser) return;
-      analyser.getByteTimeDomainData(dataArr);
+  // ── Volume polling ────────────────────────────────────────────────────────
+  const startPoll = () => {
+    if (pollTimer.current) return;
+    const data = new Uint8Array(analyser.current?.frequencyBinCount ?? 128);
+    pollTimer.current = setInterval(() => {
+      const an = analyser.current;
+      if (!an) return;
+      an.getByteTimeDomainData(data);
       let sum = 0;
-      for (let i = 0; i < dataArr.length; i++) {
-        const v = (dataArr[i] - 128) / 128;
+      for (let i = 0; i < data.length; i++) {
+        const v = (data[i] - 128) / 128;
         sum += v * v;
       }
-      const rms = Math.sqrt(sum / dataArr.length);
-      const vol = Math.min(1, rms * 7);
-      setMicVolume(vol);
+      const rms = Math.sqrt(sum / data.length);
+      setMicVolume(Math.min(1, rms * 7));
 
-      const currentState = stateRef.current;
+      const s = stateRef.current;
 
-      // Barge-in: user speaks while Lucy is speaking
-      if (currentState === 'speaking' && rms > BARGE_IN_THRESHOLD) {
-        audioQueueRef.current.stop();
-        setState('idle');
-        silenceStartRef.current = null;
-        startRecordingFromStream();
+      // Barge-in while Lucy speaks
+      if (s === 'speaking' && rms > BARGE_IN_THRESHOLD) {
+        queue.current.stop();
+        if (abortCtrl.current) { abortCtrl.current.abort(); abortCtrl.current = null; }
+        isProcessing.current = false;
+        silenceStart.current = null;
+        startListening();
         return;
       }
 
       // Silence detection while listening
-      if (currentState === 'listening') {
+      if (s === 'listening') {
         if (rms < SILENCE_THRESHOLD) {
-          if (silenceStartRef.current === null) {
-            silenceStartRef.current = Date.now();
-          } else if (Date.now() - silenceStartRef.current > SILENCE_TIMEOUT_MS) {
-            silenceStartRef.current = null;
-            if (mediaRecorderRef.current?.state === 'recording') {
-              mediaRecorderRef.current.stop();
-            }
+          if (!silenceStart.current) silenceStart.current = Date.now();
+          else if (Date.now() - silenceStart.current > SILENCE_MS) {
+            silenceStart.current = null;
+            stopListening();
           }
         } else {
-          silenceStartRef.current = null;
+          silenceStart.current = null;
         }
       }
-    }, VOLUME_POLL_MS);
-  }, []);
+    }, POLL_MS);
+  };
 
-  const stopVolumePolling = useCallback(() => {
-    if (volumePollRef.current) {
-      clearInterval(volumePollRef.current);
-      volumePollRef.current = null;
-    }
+  const stopPoll = () => {
+    if (pollTimer.current) { clearInterval(pollTimer.current); pollTimer.current = null; }
     setMicVolume(0);
-  }, []);
+  };
 
-  // --- Add message — cap at MAX_MESSAGES ---
-  const addMessage = useCallback((msg: ChatMessage) => {
-    setMessages(prev => [...prev, msg].slice(-MAX_MESSAGES));
-  }, []);
+  // ── Listen / stop ────────────────────────────────────────────────────────
+  const startListening = () => {
+    const stream = micStream.current;
+    if (!stream || isProcessing.current) return;
+    if (stateRef.current === 'thinking' || stateRef.current === 'speaking') return;
 
-  const updateMessage = useCallback((id: string, content: string) => {
-    setMessages(prev => prev.map(m => m.id === id ? { ...m, content } : m));
-  }, []);
+    chunks.current = [];
+    try {
+      const rec = new MediaRecorder(stream);
+      recorder.current = rec;
+      rec.ondataavailable = e => { if (e.data.size > 0) chunks.current.push(e.data); };
+      rec.onstop = () => {
+        const blob = new Blob(chunks.current, { type: rec.mimeType });
+        processVoice(blob);
+      };
+      rec.start();
+      setStateSafe('listening');
+      silenceStart.current = null;
+    } catch {
+      setStateSafe('idle');
+    }
+  };
 
-  // --- Recording from persistent stream ---
-  const startRecordingFromStream = useCallback(() => {
-    const stream = micStreamRef.current;
-    if (!stream) return;
-    if (stateRef.current === 'thinking') return;
+  const stopListening = () => {
+    silenceStart.current = null;
+    if (recorder.current?.state === 'recording') {
+      recorder.current.stop();
+      setStateSafe('thinking');
+    }
+  };
 
-    audioChunksRef.current = [];
-    const recorder = new MediaRecorder(stream);
-    mediaRecorderRef.current = recorder;
-
-    recorder.ondataavailable = (e) => {
-      if (e.data.size > 0) audioChunksRef.current.push(e.data);
-    };
-
-    recorder.onstop = async () => {
-      const blob = new Blob(audioChunksRef.current, { type: recorder.mimeType });
-      await processVoiceInput(blob);
-    };
-
-    recorder.start();
-    setState('listening');
-    silenceStartRef.current = null;
-  }, []);
-
-  // --- Process voice input ---
-  const processVoiceInput = useCallback(async (blob: Blob) => {
-    const convId = convIdRef.current;
-    if (!convId) { setState('idle'); return; }
+  // ── Process voice input ───────────────────────────────────────────────────
+  const processVoice = async (blob: Blob) => {
+    if (isProcessing.current) return;
+    if (!convId.current) { setStateSafe('idle'); return; }
+    isProcessing.current = true;
 
     try {
-      setState('thinking');
-      const base64Audio = await blobToBase64(blob);
+      setStateSafe('thinking');
 
-      const res = await fetch(`/api/openai/conversations/${convId}/voice-messages`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ audio: base64Audio })
+      const base64 = await new Promise<string>((res, rej) => {
+        const fr = new FileReader();
+        fr.readAsDataURL(blob);
+        fr.onloadend = () => res((fr.result as string).split(',')[1]);
+        fr.onerror = rej;
       });
 
-      if (!res.ok) throw new Error('voice failed');
+      const ctrl = new AbortController();
+      abortCtrl.current = ctrl;
 
-      setState('speaking');
-      let accumulated = '';
-      const msgId = crypto.randomUUID();
-      addMessage({ id: msgId, role: 'assistant', content: '' });
+      const resp = await fetch(`/api/openai/conversations/${convId.current}/voice-messages`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ audio: base64 }),
+        signal: ctrl.signal,
+      });
 
-      await parseSSE(res,
-        (text) => { accumulated += text; updateMessage(msgId, accumulated); },
-        (audio) => audioQueueRef.current.playChunk(audio),
-        () => { /* no-op: poll handles state */ }
+      if (!resp.ok) throw new Error('voice failed');
+
+      setStateSafe('speaking');
+      let text = '';
+      const id = crypto.randomUUID();
+      pushMsg({ id, role: 'assistant', content: '' });
+
+      await readSSE(resp,
+        t => { text += t; patchMsg(id, text); },
+        a => queue.current.playChunk(a),
+        ctrl.signal
       );
     } catch {
-      setState('idle');
+      /* aborted or network error */
+    } finally {
+      isProcessing.current = false;
+      abortCtrl.current = null;
     }
-  }, [parseSSE, addMessage, updateMessage]);
+  };
 
-  // --- Poll speaking end + auto-restart listening ---
+  // ── Poll: speaking → idle → listen ────────────────────────────────────────
   useEffect(() => {
-    const interval = setInterval(() => {
-      if (stateRef.current === 'speaking' && !audioQueueRef.current.isCurrentlyPlaying) {
-        setState('idle');
-        if (sessionActiveRef.current) {
+    const iv = setInterval(() => {
+      if (stateRef.current === 'speaking' && !queue.current.isPlaying) {
+        setStateSafe('idle');
+        if (isSessionRef.current && !isProcessing.current) {
           setTimeout(() => {
-            if (stateRef.current === 'idle') startRecordingFromStream();
-          }, 120);
+            if (stateRef.current === 'idle') startListening();
+          }, 100);
         }
       }
     }, 200);
-    return () => clearInterval(interval);
-  }, [startRecordingFromStream]);
+    return () => clearInterval(iv);
+  }, []);
 
-  // --- Greeting --- fires once per session ---
-  const triggerGreeting = useCallback(async () => {
-    if (hasGreetedRef.current) return;
-    hasGreetedRef.current = true;
+  // ── Greeting ────────────────────────────────────────────────────────────────
+  const greet = async () => {
+    if (hasGreeted.current) return;
+    hasGreeted.current = true;
+    if (!convId.current) { setStateSafe('idle'); return; }
 
     try {
-      setState('thinking');
-      const res = await fetch('/api/openai/proactive-greeting', {
+      setStateSafe('thinking');
+      const ctrl = new AbortController();
+      abortCtrl.current = ctrl;
+
+      const resp = await fetch('/api/openai/proactive-greeting', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ context: JSON.stringify(contextData ?? {}) })
+        body: JSON.stringify({ context: JSON.stringify(contextData ?? {}) }),
+        signal: ctrl.signal,
       });
-      if (!res.ok) throw new Error('greeting failed');
 
-      setState('speaking');
-      let accumulated = '';
-      const msgId = crypto.randomUUID();
-      addMessage({ id: msgId, role: 'assistant', content: '' });
+      if (!resp.ok) throw new Error('greeting failed');
 
-      await parseSSE(res,
-        (text) => { accumulated += text; updateMessage(msgId, accumulated); },
-        (audio) => audioQueueRef.current.playChunk(audio),
-        () => { /* poll handles transition */ }
+      setStateSafe('speaking');
+      let text = '';
+      const id = crypto.randomUUID();
+      pushMsg({ id, role: 'assistant', content: '' });
+
+      await readSSE(resp,
+        t => { text += t; patchMsg(id, text); },
+        a => queue.current.playChunk(a),
+        ctrl.signal
       );
     } catch {
-      setState('idle');
+      setStateSafe('idle');
+    } finally {
+      abortCtrl.current = null;
     }
-  }, [contextData, parseSSE, addMessage, updateMessage]);
+  };
 
-  // --- Pre-create conversation + wake-word setup ---
+  // ── Init: pre-create conversation once ────────────────────────────────────
   useEffect(() => {
-    // Pre-create conversation silently
+    if (hasInit.current) return;
+    hasInit.current = true;
     fetch('/api/openai/conversations', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ title: 'Lucy Session' })
-    }).then(r => r.json()).then(conv => {
-      convIdRef.current = conv.id;
-    }).catch(() => {});
+      body: JSON.stringify({ title: 'Lucy Session' }),
+    })
+      .then(r => r.json())
+      .then(c => { convId.current = c.id; })
+      .catch(() => {});
   }, []);
 
-  // --- Wake-word via SpeechRecognition ---
+  // ── Wake-word via SpeechRecognition ────────────────────────────────────────
   useEffect(() => {
-    const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    if (!SR) return;
+    const SRClass = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SRClass) return;
 
-    const recognition: SpeechRecognition = new SR();
-    recognition.continuous = true;
-    recognition.interimResults = true;
-    recognition.lang = 'en-US';
-    recognitionRef.current = recognition;
+    let alive = true;
+    let recognition: SpeechRecognition | null = null;
 
-    recognition.onresult = async (event: SpeechRecognitionEvent) => {
-      if (sessionActiveRef.current) return;
-      for (let i = event.resultIndex; i < event.results.length; i++) {
-        const t = event.results[i][0].transcript.toLowerCase();
-        if (t.includes('lucy') || t.includes('luci') || t.includes('lousy')) {
-          sessionActiveRef.current = true;
-          setIsSessionActive(true);
-          recognition.stop();
-          await openMicStream();
-          startVolumePolling();
-          triggerGreeting();
-          break;
-        }
-      }
+    const start = () => {
+      if (!alive || isActivated.current) return;
+      try {
+        recognition = new SRClass();
+        recognition.continuous = false; // Safari-safe: restart manually
+        recognition.interimResults = true;
+        recognition.lang = 'en-US';
+        recognition.maxAlternatives = 1;
+
+        recognition.onresult = async (e: SpeechRecognitionEvent) => {
+          if (isActivated.current) return;
+          for (let i = e.resultIndex; i < e.results.length; i++) {
+            const t = e.results[i][0].transcript.toLowerCase().trim();
+            if (t.includes('lucy') || t.includes('luci')) {
+              isActivated.current = true;
+              isSessionRef.current = true;
+              setIsSessionActive(true);
+              recognition?.abort();
+              await openMic();
+              startPoll();
+              greet();
+              return;
+            }
+          }
+        };
+
+        recognition.onend = () => {
+          if (!isActivated.current && alive) {
+            // Restart after short delay (Safari requirement)
+            setTimeout(start, 200);
+          }
+        };
+
+        recognition.onerror = (e: SpeechRecognitionErrorEvent) => {
+          // 'no-speech' and 'aborted' are expected — restart
+          if (!isActivated.current && alive && e.error !== 'not-allowed') {
+            setTimeout(start, 300);
+          }
+        };
+
+        recognition.start();
+      } catch { /* ignore */ }
     };
 
-    recognition.onend = () => {
-      if (!sessionActiveRef.current) {
-        try { recognition.start(); } catch { /* already running */ }
-      }
-    };
-
-    try { recognition.start(); } catch { /* already running */ }
+    start();
 
     return () => {
-      try { recognition.stop(); } catch { /* ignore */ }
+      alive = false;
+      try { recognition?.abort(); } catch { /* ignore */ }
     };
-  }, [openMicStream, startVolumePolling, triggerGreeting]);
+  }, []); // empty deps — only runs once on mount
 
-  // --- Toggle recording (manual orb tap) ---
-  const toggleRecording = useCallback(() => {
-    if (!sessionActiveRef.current) return;
+  // ── Manual orb tap ────────────────────────────────────────────────────────
+  const toggleRecording = () => {
+    if (!isSessionRef.current) return;
     const s = stateRef.current;
     if (s === 'listening') {
-      if (mediaRecorderRef.current?.state === 'recording') {
-        silenceStartRef.current = null;
-        mediaRecorderRef.current.stop();
-        setState('thinking');
-      }
-    } else if (s === 'idle' || s === 'speaking') {
-      if (s === 'speaking') audioQueueRef.current.stop();
-      startRecordingFromStream();
+      stopListening();
+    } else if (s === 'idle') {
+      startListening();
+    } else if (s === 'speaking') {
+      queue.current.stop();
+      if (abortCtrl.current) { abortCtrl.current.abort(); abortCtrl.current = null; }
+      isProcessing.current = false;
+      startListening();
     }
-  }, [startRecordingFromStream]);
-
-  return {
-    state,
-    messages,
-    micVolume,
-    isSessionActive,
-    toggleRecording,
   };
-}
 
-// --- Utility ---
-function blobToBase64(blob: Blob): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.readAsDataURL(blob);
-    reader.onloadend = () => resolve((reader.result as string).split(',')[1]);
-    reader.onerror = reject;
-  });
+  // ── Cleanup on unmount ────────────────────────────────────────────────────
+  useEffect(() => {
+    return () => {
+      stopPoll();
+      queue.current.stop();
+      if (abortCtrl.current) abortCtrl.current.abort();
+      if (micStream.current) micStream.current.getTracks().forEach(t => t.stop());
+      if (micCtx.current) micCtx.current.close().catch(() => {});
+    };
+  }, []);
+
+  return { state, messages, micVolume, isSessionActive, toggleRecording };
 }
