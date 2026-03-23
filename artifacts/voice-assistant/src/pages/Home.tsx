@@ -6,13 +6,11 @@ import { useState, useEffect, useRef } from "react";
 
 const THINKING_FILLERS = ["Hmm…", "Got it…", "Right…", "Let me think…", "Sure…"];
 
-// ── Micro-blink ──────────────────────────────────────────────────────────────
 type BlinkPhase = 'open' | 'closing' | 'opening';
 
 function useBlink() {
   const [phase, setPhase] = useState<BlinkPhase>('open');
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
   useEffect(() => {
     const schedule = () => {
       const delay = 3200 + Math.random() * 4000;
@@ -27,22 +25,34 @@ function useBlink() {
     timerRef.current = setTimeout(schedule, 2200);
     return () => { if (timerRef.current) clearTimeout(timerRef.current); };
   }, []);
-
   return phase;
 }
 
 interface HomeProps {
   firstName?: string;
+  conversationId?: number | null;
+  sidebarOpen?: boolean;
+  onOpenSidebar?: () => void;
+  onConvCreated?: (conv: { id: number; title: string; createdAt: string }) => void;
+  onSignOut?: () => void;
 }
 
 const STATUS_TOP  = 'calc(50vh + 70px)';
 const STATUS_FONT = 10;
 
-export default function Home({ firstName = "there" }: HomeProps) {
+export default function Home({
+  firstName = "there",
+  conversationId = null,
+  sidebarOpen = false,
+  onOpenSidebar,
+  onConvCreated,
+  onSignOut,
+}: HomeProps) {
   const { state, messages, micVolume, isSessionActive, isPaused, toggleRecording } =
-    useAssistant(firstName);
+    useAssistant(firstName, conversationId, onConvCreated);
   const [fillerIdx, setFillerIdx] = useState(0);
   const blinkPhase = useBlink();
+  const [showUserMenu, setShowUserMenu] = useState(false);
 
   useEffect(() => {
     if (state !== 'thinking') return;
@@ -64,21 +74,19 @@ export default function Home({ firstName = "there" }: HomeProps) {
     <div className="w-screen h-screen relative overflow-hidden">
       {/* Eye background */}
       <img
-        src="/bg-eye.jpeg"
-        alt=""
-        aria-hidden="true"
+        src="/bg-eye.jpeg" alt="" aria-hidden
         className="absolute inset-0 w-full h-full pointer-events-none select-none"
         style={{ objectFit: 'cover', objectPosition: 'center', zIndex: 0 }}
       />
 
-      {/* Subtle edge vignette */}
+      {/* Vignette */}
       <div className="absolute inset-0 pointer-events-none" style={{
         zIndex: 1,
         background: 'radial-gradient(ellipse at center, transparent 28%, rgba(0,0,0,0.20) 100%)',
       }} />
 
-      {/* Upper eyelid blink */}
-      <div aria-hidden="true" className="absolute left-0 right-0 pointer-events-none" style={{
+      {/* Upper eyelid */}
+      <div aria-hidden className="absolute left-0 right-0 pointer-events-none" style={{
         top: 0, height: '60%', zIndex: 8,
         background: 'linear-gradient(to bottom, #1a0f0d 85%, transparent 100%)',
         transformOrigin: 'top center',
@@ -86,8 +94,8 @@ export default function Home({ firstName = "there" }: HomeProps) {
         transition: `transform ${blinkDuration} ease-in-out`,
         willChange: 'transform',
       }} />
-      {/* Lower eyelid blink */}
-      <div aria-hidden="true" className="absolute left-0 right-0 pointer-events-none" style={{
+      {/* Lower eyelid */}
+      <div aria-hidden className="absolute left-0 right-0 pointer-events-none" style={{
         bottom: 0, height: '40%', zIndex: 8,
         background: 'linear-gradient(to top, #1a0f0d 85%, transparent 100%)',
         transformOrigin: 'bottom center',
@@ -97,22 +105,91 @@ export default function Home({ firstName = "there" }: HomeProps) {
       }} />
 
       {/* Header */}
-      <header className="fixed top-0 left-0 right-0 z-50 flex items-center justify-between px-8 h-16">
-        <span className="select-none" style={{
-          fontSize: 17, fontWeight: 600, letterSpacing: '-0.03em',
-          fontFamily: "'Inter', 'SF Pro Display', system-ui, sans-serif",
-          color: 'rgba(255,255,255,0.92)', textShadow: '0 1px 4px rgba(0,0,0,0.4)',
-        }}>Lucy</span>
-        {firstName && firstName !== "there" && (
+      <header className="fixed top-0 left-0 right-0 z-50 flex items-center justify-between px-5 h-14">
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          {/* Sidebar toggle */}
+          {!sidebarOpen && (
+            <button
+              onClick={onOpenSidebar}
+              style={{
+                background: "none", border: "none", cursor: "pointer",
+                padding: 4, display: "flex", alignItems: "center",
+                color: "rgba(255,255,255,0.45)",
+              }}
+            >
+              <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
+                <path d="M3 9H15M3 5H15M3 13H15" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+              </svg>
+            </button>
+          )}
           <span className="select-none" style={{
-            fontSize: 13, fontWeight: 500, letterSpacing: '0.01em',
-            fontFamily: "'Inter', system-ui, sans-serif",
-            color: 'rgba(255,255,255,0.60)', textShadow: '0 1px 3px rgba(0,0,0,0.4)',
-          }}>{firstName}</span>
+            fontSize: 16, fontWeight: 600, letterSpacing: '-0.03em',
+            fontFamily: "'Inter', 'SF Pro Display', system-ui, sans-serif",
+            color: 'rgba(255,255,255,0.92)', textShadow: '0 1px 4px rgba(0,0,0,0.4)',
+          }}>Lucy</span>
+        </div>
+
+        {/* Right: firstName + dropdown */}
+        {firstName && firstName !== "there" && (
+          <div style={{ position: "relative" }}>
+            <button
+              onClick={() => setShowUserMenu(s => !s)}
+              style={{
+                background: "none", border: "none", cursor: "pointer",
+                padding: "4px 10px",
+                fontSize: 12, fontWeight: 500,
+                fontFamily: "'Inter', system-ui, sans-serif",
+                color: "rgba(255,255,255,0.55)",
+                textShadow: "0 1px 3px rgba(0,0,0,0.4)",
+                borderRadius: 6,
+                display: "flex", alignItems: "center", gap: 5,
+              }}
+            >
+              <span>{firstName}</span>
+              <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
+                <path d="M2 4L5 7L8 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
+            </button>
+
+            {showUserMenu && (
+              <>
+                <div
+                  style={{ position: "fixed", inset: 0, zIndex: 98 }}
+                  onClick={() => setShowUserMenu(false)}
+                />
+                <div style={{
+                  position: "absolute", top: "calc(100% + 4px)", right: 0,
+                  width: 140,
+                  backgroundColor: "rgba(18,18,22,0.97)",
+                  border: "1px solid rgba(255,255,255,0.10)",
+                  borderRadius: 10,
+                  overflow: "hidden",
+                  zIndex: 99,
+                  boxShadow: "0 4px 24px rgba(0,0,0,0.5)",
+                }}>
+                  <button
+                    onClick={() => { setShowUserMenu(false); onSignOut?.(); }}
+                    style={{
+                      display: "block", width: "100%",
+                      padding: "10px 14px",
+                      textAlign: "left",
+                      fontSize: 13, fontFamily: "'Inter', system-ui, sans-serif",
+                      color: "rgba(255,255,255,0.75)",
+                      background: "none", border: "none", cursor: "pointer",
+                    }}
+                    onMouseEnter={e => ((e.currentTarget as HTMLButtonElement).style.backgroundColor = "rgba(255,255,255,0.06)")}
+                    onMouseLeave={e => ((e.currentTarget as HTMLButtonElement).style.backgroundColor = "transparent")}
+                  >
+                    Sign out
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
         )}
       </header>
 
-      {/* Orb — position:fixed, viewport-anchored */}
+      {/* Orb */}
       <div style={{
         position: 'fixed',
         top: '50vh', left: '50vw',
@@ -128,11 +205,10 @@ export default function Home({ firstName = "there" }: HomeProps) {
         />
       </div>
 
-      {/* Status label — below orb */}
+      {/* Status label */}
       <div style={{
         position: 'fixed',
-        top: STATUS_TOP,
-        left: 0, right: 0,
+        top: STATUS_TOP, left: 0, right: 0,
         zIndex: 20,
         display: 'flex', justifyContent: 'center',
       }}>

@@ -21,14 +21,23 @@ const MAX_MSGS           = 8;
 const SESSION_TIMEOUT_MS = 45_000;
 const AUTO_PAUSE_MS      = 10_000;
 
-export function useAssistant(firstName = "there") {
+interface ConvCreated {
+  id: number;
+  title: string;
+  createdAt: string;
+}
+
+export function useAssistant(
+  firstName = "there",
+  initialConvId: number | null = null,
+  onConvCreated?: (conv: ConvCreated) => void
+) {
   const [state, setState]           = useState<AssistantState>('dormant');
   const [messages, setMessages]     = useState<ChatMessage[]>([]);
   const [micVolume, setMicVolume]   = useState(0);
   const [isSessionActive, setIsSessionActive] = useState(false);
   const [isPaused, setIsPaused]     = useState(false);
 
-  // Keep firstName in a ref so API calls always have the latest value
   const firstNameRef = useRef(firstName);
   useEffect(() => { firstNameRef.current = firstName; }, [firstName]);
 
@@ -38,7 +47,7 @@ export function useAssistant(firstName = "there") {
   const queue            = useRef(new AudioQueue());
   const recorder         = useRef<MediaRecorder | null>(null);
   const chunks           = useRef<Blob[]>([]);
-  const convId           = useRef<number | null>(null);
+  const convId           = useRef<number | null>(initialConvId);
   const micStream        = useRef<MediaStream | null>(null);
   const analyser         = useRef<AnalyserNode | null>(null);
   const sharedCtx        = useRef<AudioContext | null>(null);
@@ -58,6 +67,8 @@ export function useAssistant(firstName = "there") {
   const resumeSessionRef    = useRef<(() => void) | null>(null);
   const doStartListeningRef = useRef<(() => void) | null>(null);
   const doStopListeningRef  = useRef<(() => void) | null>(null);
+  const onConvCreatedRef    = useRef(onConvCreated);
+  useEffect(() => { onConvCreatedRef.current = onConvCreated; }, [onConvCreated]);
 
   const setStateSafe = (s: AssistantState) => {
     stateRef.current = s;
@@ -312,6 +323,7 @@ export function useAssistant(firstName = "there") {
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
           body: JSON.stringify({ audio: base64, firstName: firstNameRef.current }),
           signal: ctrl.signal,
         }
@@ -352,7 +364,6 @@ export function useAssistant(firstName = "there") {
     }
   }, []);
 
-  // Speaking → idle → listen loop (gated on !isProcessing to prevent race condition)
   useEffect(() => {
     const iv = setInterval(() => {
       if (
@@ -388,6 +399,7 @@ export function useAssistant(firstName = "there") {
       const resp = await fetch('/api/openai/proactive-greeting', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify({ firstName: firstNameRef.current }),
         signal: ctrl.signal,
       });
@@ -409,15 +421,27 @@ export function useAssistant(firstName = "there") {
     }
   }, []);
 
+  // Create or reuse conversation on mount
   useEffect(() => {
     if (hasInit.current) return;
     hasInit.current = true;
+    if (initialConvId !== null) {
+      convId.current = initialConvId;
+      return;
+    }
     fetch('/api/openai/conversations', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ title: 'Lucy Session' }),
-    }).then(r => r.json()).then(c => { convId.current = c.id; }).catch(() => {});
-  }, []);
+      credentials: 'include',
+      body: JSON.stringify({ title: 'Lucy session' }),
+    })
+      .then(r => r.json())
+      .then(c => {
+        convId.current = c.id;
+        onConvCreatedRef.current?.(c);
+      })
+      .catch(() => {});
+  }, [initialConvId]);
 
   // Wake-word detection
   useEffect(() => {

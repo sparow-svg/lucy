@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { db, messages, conversations } from "@workspace/db";
+import { db, messages, conversations, tasks } from "@workspace/db";
 import { eq, asc } from "drizzle-orm";
 import { ensureCompatibleFormat } from "@workspace/integrations-openai-ai-server/audio";
 import { openai } from "@workspace/integrations-openai-ai-server";
@@ -8,6 +8,23 @@ import { buildSystemMessage } from "../../data/mockData.js";
 const router: IRouter = Router({ mergeParams: true });
 
 const MAX_HISTORY_TURNS = 10;
+
+async function getUserTasks(userId: number | null): Promise<string> {
+  if (!userId) return "";
+  try {
+    const userTasks = await db
+      .select()
+      .from(tasks)
+      .where(eq(tasks.userId, userId))
+      .orderBy(asc(tasks.createdAt));
+    const pending = userTasks.filter(t => !t.completed);
+    if (!pending.length) return "";
+    const list = pending.map(t => `- ${t.text}`).join("\n");
+    return `\n\n--- USER'S CURRENT TASKS ---\n${list}\n(Reference tasks when contextually relevant. Do not list them unprompted.)`;
+  } catch {
+    return "";
+  }
+}
 
 router.post("/:id/voice-messages", async (req, res) => {
   const id = parseInt(req.params.id, 10);
@@ -28,6 +45,7 @@ router.post("/:id/voice-messages", async (req, res) => {
       return;
     }
 
+    const userId = (req as any).session?.userId ?? null;
     const audioBuffer = Buffer.from(audio, "base64");
     const { buffer, format } = await ensureCompatibleFormat(audioBuffer);
     const audioBase64 = buffer.toString("base64");
@@ -54,7 +72,9 @@ router.post("/:id/voice-messages", async (req, res) => {
     let userTranscript = "";
     let assistantTranscript = "";
 
-    const systemMsg = buildSystemMessage(firstName as string | undefined);
+    const taskContext = await getUserTasks(userId);
+    const resolvedName = firstName as string | undefined;
+    const systemMsg = buildSystemMessage(resolvedName) + taskContext;
 
     const stream = await openai.chat.completions.create({
       model: "gpt-audio",
@@ -134,6 +154,7 @@ router.post("/:id/messages", async (req, res) => {
       return;
     }
 
+    const userId = (req as any).session?.userId ?? null;
     const history = await db
       .select()
       .from(messages)
@@ -154,7 +175,8 @@ router.post("/:id/messages", async (req, res) => {
     res.flushHeaders();
 
     let fullResponse = "";
-    const systemMsg = buildSystemMessage(firstName as string | undefined);
+    const taskContext = await getUserTasks(userId);
+    const systemMsg = buildSystemMessage(firstName as string | undefined) + taskContext;
 
     const stream = await openai.chat.completions.create({
       model: "gpt-5-mini",

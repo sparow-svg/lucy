@@ -1,8 +1,13 @@
 import express, { type Express } from "express";
 import cors from "cors";
 import pinoHttp from "pino-http";
+import session from "express-session";
+import connectPgSimple from "connect-pg-simple";
 import router from "./routes";
 import { logger } from "./lib/logger";
+import { pool } from "@workspace/db";
+
+const PgSession = connectPgSimple(session);
 
 const app: Express = express();
 
@@ -25,9 +30,30 @@ app.use(
     },
   }),
 );
-app.use(cors());
+
+app.use(cors({ origin: true, credentials: true }));
 app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ extended: true, limit: "50mb" }));
+
+app.use(
+  session({
+    store: new PgSession({
+      pool,
+      tableName: "session",
+      createTableIfMissing: true,
+    }),
+    name: "lucy.sid",
+    secret: process.env.SESSION_SECRET || "lucy-dev-secret-change-in-production",
+    resave: false,
+    saveUninitialized: false,
+    cookie: {
+      httpOnly: true,
+      maxAge: 30 * 24 * 60 * 60 * 1000,
+      sameSite: "lax",
+      secure: false,
+    },
+  }),
+);
 
 app.use("/api", router);
 

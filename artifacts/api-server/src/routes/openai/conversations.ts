@@ -1,15 +1,21 @@
 import { Router, type IRouter } from "express";
 import { db, conversations, messages } from "@workspace/db";
-import { eq, asc } from "drizzle-orm";
+import { eq, asc, desc } from "drizzle-orm";
 
 const router: IRouter = Router();
 
+function getUserId(req: any): number | null {
+  return req.session?.userId ?? null;
+}
+
 router.get("/", async (req, res) => {
   try {
-    const allConversations = await db
-      .select()
-      .from(conversations)
-      .orderBy(asc(conversations.createdAt));
+    const userId = getUserId(req);
+    let query = db.select().from(conversations).$dynamic();
+    if (userId) {
+      query = query.where(eq(conversations.userId, userId));
+    }
+    const allConversations = await query.orderBy(desc(conversations.createdAt));
     res.json(allConversations);
   } catch (err) {
     req.log.error({ err }, "Failed to list conversations");
@@ -19,6 +25,7 @@ router.get("/", async (req, res) => {
 
 router.post("/", async (req, res) => {
   try {
+    const userId = getUserId(req);
     const { title } = req.body;
     if (!title) {
       res.status(400).json({ error: "title is required" });
@@ -26,7 +33,7 @@ router.post("/", async (req, res) => {
     }
     const [conversation] = await db
       .insert(conversations)
-      .values({ title })
+      .values({ title, userId })
       .returning();
     res.status(201).json(conversation);
   } catch (err) {
